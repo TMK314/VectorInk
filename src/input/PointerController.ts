@@ -70,23 +70,32 @@ export class PointerController {
   }
   
   private onPointerUp(event: PointerEvent): void {
-    if (!this.isDrawing) return;
+  if (!this.isDrawing) return;
+  
+  this.isDrawing = false;
+  this.renderer['svg'].releasePointerCapture(event.pointerId);
+  
+  // Finalize stroke if we have enough points
+  if (this.currentStroke.length >= 2) {
+    // Create a complete stroke object with the correct structure
+    const strokeData = {
+      points: this.currentStroke,
+      style: this.currentStyle,
+      // createdAt wird in addStroke automatisch gesetzt, also nicht hier angeben
+      device: 'pen' as const
+    };
     
-    this.isDrawing = false;
-    this.renderer['svg'].releasePointerCapture(event.pointerId);
+    // Add the stroke to the document - nur 1 Argument!
+    const stroke = this.document.addStroke(strokeData);
     
-    // Finalize stroke if we have enough points
-    if (this.currentStroke.length >= 2) {
-      const stroke = this.document.addStroke(this.currentStroke, this.currentStyle);
-      
-      // TODO: Auto-group into blocks based on proximity
-      
-      // Re-render
-      this.renderer.render();
-    }
+    // TODO: Auto-group into blocks based on proximity
     
-    this.currentStroke = [];
+    // Re-render
+    this.renderer.render();
   }
+  
+  this.currentStroke = [];
+}
   
   private onPointerCancel(event: PointerEvent): void {
     this.isDrawing = false;

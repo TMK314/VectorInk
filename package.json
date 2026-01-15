@@ -1,20 +1,19 @@
 {
-  "name": "vectorink",
+  "name": "obsidian-vector-ink",
   "version": "1.0.0",
-  "description": "Handwriting vector ink plugin for Obsidian",
+  "description": "Vector-based handwriting for Obsidian",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production"
   },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
     "@types/node": "^16.11.6",
-    "esbuild": "^0.19.0",
+    "builtin-modules": "^3.2.0",
+    "esbuild": "^0.17.19",
     "obsidian": "latest",
-    "tslib": "^2.3.1",
-    "typescript": "^4.7.4"
-  }
+    "tslib": "^2.4.0",
+    "typescript": "^5.5.4"
+  },
+  "dependencies": {}
 }

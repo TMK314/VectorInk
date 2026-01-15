@@ -1,7 +1,7 @@
 import { InkDocumentData, Stroke, Block, Point, StrokeStyle } from '../types';
 
 export class InkDocument {
-  private data: InkDocumentData;
+    private data: InkDocumentData;
 
   constructor(data?: Partial<InkDocumentData>) {
     const now = new Date().toISOString();

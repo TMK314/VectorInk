@@ -1,5 +1,5 @@
 // render/InkRenderer.ts
-import { Stroke, Block } from '../schema';
+import { Stroke, Block } from '../types';  // Geändert von '../schema' zu '../types'
 import { InkDocument } from '../model/InkDocument';
 
 export class InkRenderer {
@@ -65,7 +65,8 @@ export class InkRenderer {
         this.svg.appendChild(gridRect);
     }
 
-    async render(): Promise<void> {
+    // Entfernt 'async' da keine asynchronen Operationen benötigt werden
+    render(): void {
         this.clear();
 
         // Render all strokes
@@ -110,7 +111,7 @@ export class InkRenderer {
         this.svg.appendChild(path);
     }
 
-    renderBlockOverlay(block: any): void {
+    renderBlockOverlay(block: Block): void {
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('x', block.bbox.x.toString());
         rect.setAttribute('y', block.bbox.y.toString());
