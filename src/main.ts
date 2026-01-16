@@ -1,48 +1,33 @@
-import { Plugin, Notice, WorkspaceLeaf, TFile } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, TFile, Workspace } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
 
 export default class VectorInkPlugin extends Plugin {
+	private activeLeaf: WorkspaceLeaf | null = null;
+
 	async onload() {
 		console.log('🔧 Loading Vector Ink Plugin');
 
-		try {
-			// Try to register view, but handle the case where it might already be registered
-			this.registerView(
-				INK_VIEW_TYPE,
-				(leaf: WorkspaceLeaf) => new InkView(leaf, this)
-			);
-		} catch (error) {
-			console.warn('View might already be registered, continuing...', error);
-		}
+		this.registerView(
+			INK_VIEW_TYPE,
+			(leaf) => new InkView(leaf, this)
+		);
 
-		try {
-			// Register file extension
-			this.registerExtensions(['ink'], INK_VIEW_TYPE);
-			console.log('✅ Registered .ink extension');
-		} catch (error) {
-			console.warn('Extensions might already be registered', error);
-		}
+		this.registerExtensions(['ink'], INK_VIEW_TYPE);
 
-		// Add ribbon icon
-		this.addRibbonIcon('pencil', 'Create Ink Note', async () => {
-			await this.createInkNote();
+		this.addRibbonIcon('pencil', 'Create Ink Note', () => {
+			this.createInkNote();
 		});
 
-		// Add commands
 		this.addCommand({
 			id: 'create-ink-note',
 			name: 'Create Ink Note',
-			callback: async () => {
-				await this.createInkNote();
-			}
+			callback: () => this.createInkNote()
 		});
 
 		this.addCommand({
 			id: 'create-test-document',
 			name: 'Create Test Document',
-			callback: async () => {
-				await this.createTestDocument();
-			}
+			callback: () => this.createTestDocument()
 		});
 
 		console.log('✅ Vector Ink Plugin loaded');

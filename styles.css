@@ -53,3 +53,88 @@
   overflow: auto;
   padding: 10px;
 }
+
+/* In styles.css oder direkt als CSS im Plugin */
+.ink-view-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.ink-toolbar {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.ink-blocks-container {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+}
+
+.ink-block {
+    margin-bottom: 20px;
+    border: 2px solid;
+    border-radius: 8px;
+    padding: 15px;
+    background-color: white;
+    transition: border-color 0.2s ease;
+    position: relative;
+}
+
+.ink-block:hover {
+    border-color: var(--interactive-accent);
+}
+
+.ink-block.selected {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.ink-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ink-block-content {
+    min-height: 150px;
+}
+
+.ink-block canvas {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background-color: var(--background-primary);
+    cursor: crosshair;
+    width: 100%;
+    height: auto;
+}
+
+.ink-block-type-selector {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.ink-toolbar button {
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.ink-toolbar button:hover {
+    background-color: var(--background-modifier-hover);
+}

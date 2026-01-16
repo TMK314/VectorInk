@@ -25,7 +25,7 @@ export interface BoundingBox {
   height: number;
 }
 
-export type BlockType = 'paragraph' | 'heading' | 'quote' | 'math';
+export type BlockType = 'paragraph' | 'heading' | 'quote' | 'math' | 'drawing' | 'table';
 
 export interface Block {
   id: string;
@@ -33,12 +33,6 @@ export interface Block {
   strokeIds: string[];
   bbox: BoundingBox;
   order: number;
-  // metadata ist optional - entfernen oder mit ? markieren
-  metadata?: {
-    level?: number;
-    language?: string;
-    listType?: 'bullet' | 'numbered' | 'checkbox';
-  };
 }
 
 // In types.ts
