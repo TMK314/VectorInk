@@ -1,9 +1,7 @@
-import { Plugin, Notice, WorkspaceLeaf, TFile, Workspace } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
 
 export default class VectorInkPlugin extends Plugin {
-	private activeLeaf: WorkspaceLeaf | null = null;
-
 	async onload() {
 		console.log('🔧 Loading Vector Ink Plugin');
 
@@ -30,6 +28,22 @@ export default class VectorInkPlugin extends Plugin {
 			callback: () => this.createTestDocument()
 		});
 
+		this.addCommand({
+			id: 'digitalize-current',
+			name: 'Digitalize Current Ink Document',
+			callback: () => {
+				const leaf = this.app.workspace.getLeaf(false);
+
+				const view = (leaf as unknown as { view?: unknown })?.view;
+
+				if (view instanceof InkView) {
+					view.digitalizeCurrentDocument();
+				} else {
+					new Notice('No active ink document found');
+				}
+			}
+		});
+
 		console.log('✅ Vector Ink Plugin loaded');
 	}
 
@@ -42,8 +56,8 @@ export default class VectorInkPlugin extends Plugin {
 					createdAt: new Date().toISOString(),
 					updatedAt: new Date().toISOString(),
 					page: {
-						width: 800,  // Canvas width in pixels
-						height: 600, // Canvas height in pixels
+						width: 800,
+						height: 600,
 						unit: 'px',
 						backgroundColor: '#ffffff'
 					}
@@ -63,26 +77,18 @@ export default class VectorInkPlugin extends Plugin {
 							color: '#ff0000',
 							semantic: 'normal'
 						},
-						createdAt: new Date().toISOString(),
-						device: 'pen'
-					},
-					{
-						id: 'test-stroke-2',
-						points: [
-							{ x: 300, y: 300, t: 500, pressure: 0.5 },
-							{ x: 400, y: 400, t: 600, pressure: 0.7 },
-							{ x: 500, y: 300, t: 700, pressure: 0.5 }
-						],
-						style: {
-							width: 2,
-							color: '#0000ff',
-							semantic: 'normal'
-						},
-						createdAt: new Date().toISOString(),
-						device: 'pen'
+						createdAt: new Date().toISOString()
 					}
 				],
-				blocks: [],
+				blocks: [
+					{
+						id: 'test-block-1',
+						type: 'paragraph',
+						strokeIds: ['test-stroke-1'],
+						bbox: { x: 50, y: 50, width: 200, height: 200 },
+						order: 0
+					}
+				],
 				settings: {
 					defaultPen: {
 						width: 2,
@@ -138,23 +144,7 @@ export default class VectorInkPlugin extends Plugin {
 						backgroundColor: '#ffffff'
 					}
 				},
-				strokes: [
-					{
-						id: 'test-stroke-1',
-						points: [
-							{ x: 50, y: 50, t: Date.now(), pressure: 0.5 },
-							{ x: 100, y: 100, t: Date.now() + 50, pressure: 0.6 },
-							{ x: 150, y: 50, t: Date.now() + 100, pressure: 0.5 }
-						],
-						style: {
-							width: 2,
-							color: '#000000',
-							semantic: 'normal'
-						},
-						createdAt: new Date().toISOString(),
-						device: 'pen'
-					}
-				],
+				strokes: [],
 				blocks: [],
 				settings: {
 					defaultPen: {
@@ -172,7 +162,7 @@ export default class VectorInkPlugin extends Plugin {
 
 			const content = JSON.stringify(docData, null, 2);
 
-			// Create the file directly - timestamp should be unique enough
+			// Create the file directly
 			const file = await this.app.vault.create(filename, content);
 
 			// Open the file
