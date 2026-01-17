@@ -95,6 +95,11 @@ export class InkDocument {
         this.updateTimestamp();
     }
 
+    removeStroke(id: string): void {
+        const index = this.strokes.findIndex(s => s.id === id);
+        if (index >= 0) this.strokes.splice(index, 1);
+    }
+
     // Update timestamp
     updateTimestamp(): void {
         this.data.document.updatedAt = new Date().toISOString();

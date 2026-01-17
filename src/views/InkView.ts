@@ -56,7 +56,9 @@ export class InkView extends FileView {
     }
 
     async onOpen(): Promise<void> {
-        await this.loadDocument();
+        await this.loadDocument(); // Dokument laden
+        this.blocks = this.document ? [...this.document.blocks].sort((a, b) => a.order - b.order) : [];
+        this.contentEl.empty();
         await this.setupUI();
     }
 
@@ -390,16 +392,20 @@ export class InkView extends FileView {
 
         // Canvas for drawing
         const canvas = document.createElement('canvas');
-        canvas.width = 800;
-        canvas.height = 200;
-        canvas.style.width = '100%';
-        canvas.style.height = '200px';
+        canvas.width = block.bbox.width;
+        canvas.height = block.bbox.height;
+        canvas.style.width = block.bbox.width + 'px';
+        canvas.style.height = block.bbox.height + 'px';
         canvas.style.border = '1px solid var(--background-modifier-border)';
         canvas.style.borderRadius = '4px';
         canvas.style.background = 'white';
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = block.bbox.width * dpr;
+            canvas.height = block.bbox.height * dpr;
+            ctx.scale(dpr, dpr);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
         }
@@ -513,6 +519,7 @@ export class InkView extends FileView {
             const block = this.blocks[blockIndex];
             if (block) {
                 block.strokeIds = [];
+                this.syncBlockStrokes(block); // <-- Strokes entfernen
                 this.renderBlocks();
                 new Notice('Block cleared');
             }
@@ -520,13 +527,13 @@ export class InkView extends FileView {
     }
 
     private deleteBlock(blockId: string): void {
+        const block = this.blocks.find(b => b.id === blockId);
+        if (block) {
+            this.syncBlockStrokes({ ...block, strokeIds: [] }); // alle Strokes löschen
+        }
+
         this.blocks = this.blocks.filter(b => b.id !== blockId);
-
-        // Reindex remaining blocks
-        this.blocks.forEach((block, idx) => {
-            block.order = idx;
-        });
-
+        this.blocks.forEach((b, idx) => b.order = idx);
         this.currentBlockIndex = Math.max(0, this.currentBlockIndex - 1);
         this.renderBlocks();
         new Notice('Block deleted');
@@ -540,6 +547,13 @@ export class InkView extends FileView {
             block.style.marginTop = `${this.blockMargins.top}px`;
             block.style.marginBottom = `${this.blockMargins.bottom}px`;
         });
+    }
+
+    async onFileChange(newFile: TFile) {
+        this.file = newFile;
+        await this.loadDocument();
+        this.blocks = this.document ? [...this.document.blocks].sort((a, b) => a.order - b.order) : [];
+        await this.setupUI();
     }
 
     /* ------------------ Drawing ------------------ */
@@ -620,18 +634,12 @@ export class InkView extends FileView {
             if (!this.isDrawing || !this.document) return;
 
             this.isDrawing = false;
-
-            if (this.currentStroke.length < 2) {
-                lastPoint = null;
-                return;
-            }
+            if (this.currentStroke.length < 2) return;
 
             const block = this.blocks[this.currentBlockIndex];
             if (!block) return;
 
-            // Simplify the stroke using Ramer-Douglas-Peucker algorithm
             const simplifiedPoints = this.simplifyStroke(this.currentStroke, this.epsilon);
-
             const stroke: Stroke = {
                 id: crypto.randomUUID(),
                 points: simplifiedPoints,
@@ -639,15 +647,13 @@ export class InkView extends FileView {
                 createdAt: new Date().toISOString()
             };
 
-            // Add stroke to document
             const addedStroke = this.document.addStroke(stroke);
             block.strokeIds.push(addedStroke.id);
 
-            // Update block bounding box if needed
             this.updateBlockBoundingBox(block, simplifiedPoints);
+            this.syncBlockStrokes(block);   // <-- hier aufrufen
 
             this.currentStroke = [];
-            lastPoint = null;
         };
 
         // Mouse events
@@ -702,6 +708,92 @@ export class InkView extends FileView {
         canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
         canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    }
+
+    private resizeCanvas(canvas: HTMLCanvasElement): void {
+        if (this.blocks[this.currentBlockIndex] !== undefined) {
+            this.updateCanvasHeight(canvas, this.blocks[this.currentBlockIndex]!);
+        }
+
+        /*const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.scale(dpr, dpr);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+        }*/
+    }
+
+    private updateCanvasHeight(canvas: HTMLCanvasElement, block: Block): void {
+        if (!this.document) return;
+
+        // Finde die maximalen y-Koordinaten aller Strokes im Block
+        let maxY = 0;
+        for (const strokeId of block.strokeIds) {
+            const stroke = this.document.getStroke(strokeId);
+            if (!stroke) continue;
+            for (const p of stroke.points) {
+                if (p.y > maxY) maxY = p.y;
+            }
+        }
+
+        // Höhe mit Padding
+        const padding = 20;
+        const newHeight = Math.max(block.bbox.height, maxY + padding);
+
+        if (newHeight !== canvas.height) {
+            canvas.height = newHeight;
+            block.bbox.height = newHeight;
+            this.drawBlockStrokes(canvas, block);
+        }
+    }
+
+    private updateBlockCanvasSize(block: Block, canvas: HTMLCanvasElement) {
+        if (!this.document) return;
+
+        const scrollBefore = this.blocksContainer?.scrollTop ?? 0;
+
+        let maxY = 0;
+        for (const strokeId of block.strokeIds) {
+            const stroke = this.document.getStroke(strokeId);
+            if (!stroke) continue;
+            for (const p of stroke.points) maxY = Math.max(maxY, p.y);
+        }
+
+        const padding = 20;
+        const newHeight = Math.max(150, maxY + padding);
+
+        if (canvas.height !== newHeight || canvas.style.height !== `${newHeight}px`) {
+            canvas.height = newHeight;
+            canvas.style.height = `${newHeight}px`;
+            block.bbox.height = newHeight;
+            this.drawBlockStrokes(canvas, block);
+        }
+
+        if (this.blocksContainer) {
+            this.blocksContainer.scrollTop = scrollBefore;
+        }
+    }
+
+    private syncBlockStrokes(block: Block): void {
+        if (!this.document) return;
+
+        // Entferne Strokes aus diesem Block, die nicht mehr vorhanden sind
+        const strokesToRemove = this.document.strokes.filter(s => !block.strokeIds.includes(s.id));
+        strokesToRemove.forEach(s => this.document!.removeStroke(s.id));
+
+        // Neue Strokes hinzufügen (falls noch nicht im Dokument)
+        for (const strokeId of block.strokeIds) {
+            if (!this.document.getStroke(strokeId)) {
+                // stroke sollte bereits bei stopDrawing hinzugefügt worden sein
+                // sonst hier hinzufügen
+                console.warn(`Stroke ${strokeId} not found in document`);
+            }
+        }
     }
 
     private drawBlockStrokes(canvas: HTMLCanvasElement, block: Block): void {
@@ -828,20 +920,25 @@ export class InkView extends FileView {
         if (!block) return;
 
         const threshold = this.BLOCK_EXPANSION_THRESHOLD;
+        let expanded = false;
 
-        // Check if near bottom
-        if (point.y > canvas.height - threshold) {
-            canvas.height += this.BLOCK_EXPANSION_AMOUNT;
-            block.bbox.height = canvas.height;
-            this.renderBlocks(); // Re-render to update canvas size
+        // Nach unten erweitern
+        if (point.y > block.bbox.height - threshold) {
+            block.bbox.height += this.BLOCK_EXPANSION_AMOUNT;
+            expanded = true;
         }
 
-        // Check if near top (only expand if we're not at the very top)
-        if (point.y < threshold && block.bbox.y > threshold) {
-            canvas.height += this.BLOCK_EXPANSION_AMOUNT;
-            block.bbox.y -= this.BLOCK_EXPANSION_AMOUNT;
-            block.bbox.height = canvas.height;
-            this.renderBlocks();
+        // Nach oben erweitern
+        if (point.y < threshold && block.bbox.y > 0) {
+            block.bbox.y = Math.max(0, block.bbox.y - this.BLOCK_EXPANSION_AMOUNT);
+            block.bbox.height += this.BLOCK_EXPANSION_AMOUNT;
+            expanded = true;
+        }
+
+        if (expanded) {
+            // Canvas auf neue Größe bringen
+            canvas.height = block.bbox.height;
+            this.drawBlockStrokes(canvas, block);
         }
     }
 
@@ -887,6 +984,14 @@ export class InkView extends FileView {
         // Redraw the block
         this.drawBlockStrokes(canvas, block);
     }
+
+    private getCanvasForBlock(blockId: string): HTMLCanvasElement | null {
+        if (!this.blocksContainer) return null;
+        const blockEl = this.blocksContainer.querySelector(`.ink-block[data-block-id="${blockId}"]`);
+        if (!blockEl) return null;
+        return blockEl.querySelector('canvas') as HTMLCanvasElement;
+    }
+
 
     /* ------------------ Tools ------------------ */
 
@@ -1037,10 +1142,11 @@ export class InkView extends FileView {
     async saveDocument(): Promise<void> {
         if (!this.document || !this.file) return;
 
-        // Update document blocks
+        // Alle Blocks ins Dokument schreiben
         this.document.clearBlocks();
         this.blocks.forEach(b => this.document!.addBlock(b));
 
+        // Speichern
         await this.app.vault.modify(this.file, this.document.toJSON());
         new Notice('Ink document saved');
     }
@@ -1102,6 +1208,15 @@ export class InkView extends FileView {
         };
 
         document.addEventListener('keydown', handleKeyDown);
+
+        window.addEventListener('resize', () => {
+            if (!this.blocksContainer) return;
+            this.blocks.forEach(block => {
+                const canvas = this.getCanvasForBlock(block.id);
+                if (canvas) this.updateBlockCanvasSize(block, canvas);
+            });
+        });
+
 
         // Store reference for cleanup
         (this as any)._handleKeyDown = handleKeyDown;
