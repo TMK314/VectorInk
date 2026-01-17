@@ -85,19 +85,36 @@ export class InkDocument {
 
     // Clear all strokes
     clearStrokes(): void {
-        this.data.strokes = [];
+        this.data.strokes = []; // Direkt das data-Array leeren
         this.updateTimestamp();
     }
 
     // Clear all blocks
     clearBlocks(): void {
+        // Alle Stroke-IDs aus allen Blöcken sammeln
+        const allStrokeIds = new Set<string>();
+        this.data.blocks.forEach(block => {
+            block.strokeIds.forEach(id => allStrokeIds.add(id));
+        });
+
+        // Alle Strokes löschen, die zu Blöcken gehören
+        allStrokeIds.forEach(strokeId => {
+            this.removeStroke(strokeId);
+        });
+
+        // Blöcke leeren
         this.data.blocks = [];
         this.updateTimestamp();
     }
 
-    removeStroke(id: string): void {
-        const index = this.strokes.findIndex(s => s.id === id);
-        if (index >= 0) this.strokes.splice(index, 1);
+    removeStroke(strokeId: string): boolean {
+        const index = this.data.strokes.findIndex(s => s.id === strokeId);
+        if (index >= 0) {
+            this.data.strokes.splice(index, 1);
+            this.updateTimestamp();
+            return true;
+        }
+        return false;
     }
 
     // Update timestamp

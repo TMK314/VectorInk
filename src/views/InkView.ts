@@ -63,8 +63,42 @@ export class InkView extends FileView {
     }
 
     async onClose(): Promise<void> {
+    // Dokument automatisch speichern beim Schließen
+    try {
         await this.saveDocument();
+    } catch (error) {
+        console.error('Failed to save on close:', error);
     }
+    
+    // Event Listener aufräumen
+    const handleKeyDown = (this as any)._handleKeyDown;
+    if (handleKeyDown) {
+        document.removeEventListener('keydown', handleKeyDown);
+    }
+}
+
+private cleanupOrphanedStrokes(): void {
+    if (!this.document) return;
+    
+    // Alle verwendeten Stroke-IDs sammeln
+    const usedStrokeIds = new Set<string>();
+    this.blocks.forEach(block => {
+        block.strokeIds.forEach(id => usedStrokeIds.add(id));
+    });
+    
+    // Alle Strokes im Dokument durchgehen
+    const allStrokes = this.document.strokes;
+    const orphanedStrokes = allStrokes.filter(stroke => 
+        !usedStrokeIds.has(stroke.id)
+    );
+    
+    if (orphanedStrokes.length > 0) {
+        console.log(`🧹 Cleaning up ${orphanedStrokes.length} orphaned strokes`);
+        orphanedStrokes.forEach(stroke => {
+            this.document!.removeStroke(stroke.id);
+        });
+    }
+}
 
     /* ------------------ UI Setup ------------------ */
 
@@ -514,30 +548,65 @@ export class InkView extends FileView {
     }
 
     private clearBlock(blockId: string): void {
-        const blockIndex = this.blocks.findIndex(b => b.id === blockId);
-        if (blockIndex >= 0) {
-            const block = this.blocks[blockIndex];
-            if (block) {
-                block.strokeIds = [];
-                this.syncBlockStrokes(block); // <-- Strokes entfernen
-                this.renderBlocks();
-                new Notice('Block cleared');
+    const blockIndex = this.blocks.findIndex(b => b.id === blockId);
+    if (blockIndex >= 0) {
+        const block = this.blocks[blockIndex];
+        if (block && this.document) {
+            // Alle Strokes des Blocks aus dem Dokument entfernen
+            block.strokeIds.forEach(strokeId => {
+                if (this.document) { // Nullprüfung hinzufügen
+                    this.document.removeStroke(strokeId);
+                }
+            });
+            
+            // Block leeren
+            block.strokeIds = [];
+            
+            // Canvas neu zeichnen
+            const canvas = this.getCanvasForBlock(blockId);
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
             }
+            
+            this.renderBlocks();
+            new Notice('Block cleared');
         }
     }
+}
 
     private deleteBlock(blockId: string): void {
-        const block = this.blocks.find(b => b.id === blockId);
-        if (block) {
-            this.syncBlockStrokes({ ...block, strokeIds: [] }); // alle Strokes löschen
+    const blockIndex = this.blocks.findIndex(b => b.id === blockId);
+    if (blockIndex >= 0) {
+        const block = this.blocks[blockIndex];
+        
+        // Strokes aus dem Dokument entfernen
+        if (block && this.document) {
+            block.strokeIds.forEach(strokeId => {
+                if (this.document) { // Nullprüfung hinzufügen
+                    this.document.removeStroke(strokeId);
+                }
+            });
         }
-
-        this.blocks = this.blocks.filter(b => b.id !== blockId);
+        
+        // Block aus der Liste entfernen
+        this.blocks.splice(blockIndex, 1);
+        
+        // Order neu nummerieren
         this.blocks.forEach((b, idx) => b.order = idx);
-        this.currentBlockIndex = Math.max(0, this.currentBlockIndex - 1);
+        
+        // Aktuellen Index anpassen
+        this.currentBlockIndex = Math.min(
+            Math.max(0, this.currentBlockIndex - 1),
+            this.blocks.length - 1
+        );
+        
         this.renderBlocks();
         new Notice('Block deleted');
     }
+}
 
     private updateBlockMargins(): void {
         if (!this.blocksContainer) return;
@@ -710,6 +779,70 @@ export class InkView extends FileView {
         canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
     }
 
+    private setupCanvas(canvas: HTMLCanvasElement, block: Block): void {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+
+        // Logische Größe (CSS)
+        const logicalWidth = block.bbox.width;
+        const logicalHeight = block.bbox.height;
+
+        // Canvas-Display-Größe (CSS)
+        canvas.style.width = `${logicalWidth}px`;
+        canvas.style.height = `${logicalHeight}px`;
+
+        // Canvas-Zeichenflächen-Größe (physikalische Pixel)
+        canvas.width = logicalWidth * dpr;
+        canvas.height = logicalHeight * dpr;
+
+        // Kontext skalieren
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.scale(dpr, dpr);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+        }
+    }
+
+    private expandBlockDownwards(canvas: HTMLCanvasElement, block: Block, point: Point): void {
+        const padding = 50; // Vorausschauendes Padding
+
+        // Prüfen, ob Punkt nahe am unteren Rand ist
+        if (point.y > block.bbox.height - this.BLOCK_EXPANSION_THRESHOLD) {
+            const newHeight = Math.max(
+                block.bbox.height + this.BLOCK_EXPANSION_AMOUNT,
+                point.y + padding
+            );
+
+            // Nur erweitern, nicht verkleinern
+            if (newHeight > block.bbox.height) {
+                block.bbox.height = newHeight;
+                this.setupCanvas(canvas, block);
+
+                // Alte Strokes neu zeichnen
+                this.drawBlockStrokes(canvas, block);
+
+                // Block-Element-Höhe anpassen
+                const blockEl = canvas.closest('.ink-block') as HTMLElement;
+                if (blockEl) {
+                    blockEl.style.minHeight = `${block.bbox.height}px`;
+                }
+            }
+        }
+    }
+
+    private getCanvasCoordinates(canvas: HTMLCanvasElement, clientX: number, clientY: number): Point {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+
+        return {
+            x: (clientX - rect.left) * (canvas.width / (rect.width * dpr)),
+            y: (clientY - rect.top) * (canvas.height / (rect.height * dpr)),
+            t: Date.now(),
+            pressure: 0.5
+        };
+    }
+
     private resizeCanvas(canvas: HTMLCanvasElement): void {
         if (this.blocks[this.currentBlockIndex] !== undefined) {
             this.updateCanvasHeight(canvas, this.blocks[this.currentBlockIndex]!);
@@ -779,19 +912,77 @@ export class InkView extends FileView {
         }
     }
 
+    private stopDrawing(): void {
+    if (!this.isDrawing || !this.document) return;
+
+    this.isDrawing = false;
+    if (this.currentStroke.length < 2) return;
+
+    const block = this.blocks[this.currentBlockIndex];
+    if (!block) return;
+
+    // Stroke erstellen
+    const simplifiedPoints = this.simplifyStroke(this.currentStroke, this.epsilon);
+    const stroke: Stroke = {
+        id: crypto.randomUUID(),
+        points: simplifiedPoints,
+        style: { ...this.currentPenStyle },
+        createdAt: new Date().toISOString()
+    };
+
+    try {
+        // Stroke zum Dokument hinzufügen
+        const addedStroke = this.document.addStroke(stroke);
+        
+        // Stroke-ID dem Block hinzufügen
+        if (!block.strokeIds.includes(addedStroke.id)) {
+            block.strokeIds.push(addedStroke.id);
+        }
+        
+        // Bounding Box aktualisieren
+        this.updateBlockBoundingBox(block, simplifiedPoints);
+        
+        // Canvas neu zeichnen
+        const canvas = this.getCanvasForBlock(block.id);
+        if (canvas) {
+            this.drawBlockStrokes(canvas, block);
+        }
+        
+        // Sofort speichern (optional)
+        // await this.saveDocument();
+        
+    } catch (error) {
+        console.error('Failed to add stroke:', error);
+    } finally {
+        this.currentStroke = [];
+    }
+}
+
     private syncBlockStrokes(block: Block): void {
         if (!this.document) return;
 
-        // Entferne Strokes aus diesem Block, die nicht mehr vorhanden sind
-        const strokesToRemove = this.document.strokes.filter(s => !block.strokeIds.includes(s.id));
-        strokesToRemove.forEach(s => this.document!.removeStroke(s.id));
+        // Alle Strokes im Dokument, die zu diesem Block gehören sollten
+        const allStrokeIds = block.strokeIds;
 
-        // Neue Strokes hinzufügen (falls noch nicht im Dokument)
-        for (const strokeId of block.strokeIds) {
-            if (!this.document.getStroke(strokeId)) {
-                // stroke sollte bereits bei stopDrawing hinzugefügt worden sein
-                // sonst hier hinzufügen
-                console.warn(`Stroke ${strokeId} not found in document`);
+        // Strokes, die im Dokument sind aber nicht im Block
+        const strokesToRemove: string[] = [];
+
+        // Überprüfe alle Strokes im Dokument
+        for (const stroke of this.document.strokes) {
+            // Wenn Stroke nicht in block.strokeIds ist, aber zu diesem Block gehört
+            // (Dies ist ein vereinfachtes Beispiel - Sie benötigen eine bessere Zuordnungslogik)
+            if (!allStrokeIds.includes(stroke.id)) {
+                // Prüfe, ob der Stroke innerhalb der Block-BBox liegt
+                const firstPoint = stroke.points[0];
+                if (firstPoint) {
+                    if (firstPoint.x >= block.bbox.x &&
+                        firstPoint.x <= block.bbox.x + block.bbox.width &&
+                        firstPoint.y >= block.bbox.y &&
+                        firstPoint.y <= block.bbox.y + block.bbox.height) {
+                        // Stroke gehört zu diesem Block, aber ist nicht in der Liste
+                        // Nichts tun oder zur Liste hinzufügen
+                    }
+                }
             }
         }
     }
@@ -919,27 +1110,7 @@ export class InkView extends FileView {
         const block = this.blocks[this.currentBlockIndex];
         if (!block) return;
 
-        const threshold = this.BLOCK_EXPANSION_THRESHOLD;
-        let expanded = false;
-
-        // Nach unten erweitern
-        if (point.y > block.bbox.height - threshold) {
-            block.bbox.height += this.BLOCK_EXPANSION_AMOUNT;
-            expanded = true;
-        }
-
-        // Nach oben erweitern
-        if (point.y < threshold && block.bbox.y > 0) {
-            block.bbox.y = Math.max(0, block.bbox.y - this.BLOCK_EXPANSION_AMOUNT);
-            block.bbox.height += this.BLOCK_EXPANSION_AMOUNT;
-            expanded = true;
-        }
-
-        if (expanded) {
-            // Canvas auf neue Größe bringen
-            canvas.height = block.bbox.height;
-            this.drawBlockStrokes(canvas, block);
-        }
+        this.expandBlockDownwards(canvas, block, point);
     }
 
     private eraseAtPoint(canvas: HTMLCanvasElement, blockIndex: number, point: Point): void {
@@ -1139,32 +1310,98 @@ export class InkView extends FileView {
         }
     }
 
-    async saveDocument(): Promise<void> {
-        if (!this.document || !this.file) return;
+    async onLoadFile(file: TFile): Promise<void> {
+        console.log('🔄 Loading file:', file.path);
 
-        // Alle Blocks ins Dokument schreiben
-        this.document.clearBlocks();
-        this.blocks.forEach(b => this.document!.addBlock(b));
+        // Datei wechseln
+        this.file = file;
 
-        // Speichern
-        await this.app.vault.modify(this.file, this.document.toJSON());
-        new Notice('Ink document saved');
+        // UI zurücksetzen
+        this.contentEl.empty();
+        this.document = null;
+        this.blocks = [];
+        this.currentBlockIndex = 0;
+
+        // Neues Dokument laden
+        await this.loadDocument();
+
+        // UI neu aufbauen
+        await this.setupUI();
+
+        // Scroll positionieren
+        if (this.blocksContainer) {
+            this.blocksContainer.scrollTop = 0;
+        }
     }
 
-    private updateBlock(updates: PartialBlock): void {
-        const index = this.blocks.findIndex(b => b.id === updates.id);
-        if (index >= 0) {
-            const block = this.blocks[index];
-            if (block) {
-                const updatedBlock = { ...block, ...updates } as Block;
-                this.blocks[index] = updatedBlock;
+    // Korrigierte saveDocument-Methode:
+    async saveDocument(): Promise<void> {
+    if (!this.document || !this.file) {
+        console.error('❌ No document or file to save');
+        new Notice('No document to save');
+        return;
+    }
 
-                if (this.document) {
-                    this.document.updateBlock(updates.id, updatedBlock);
+    try {
+        console.log('💾 Saving document...');
+        
+        // Dokument-Daten vorbereiten
+        const docData = this.document.getData();
+        
+        // Blöcke ins Dokument übertragen
+        docData.blocks = this.blocks.map(block => ({
+            ...block,
+            // Sicherstellen, dass strokeIds aktuell sind
+            strokeIds: [...block.strokeIds]
+        })).sort((a, b) => a.order - b.order);
+        
+        // Strokes filtern: Nur Strokes behalten, die in Blöcken referenziert sind
+        const usedStrokeIds = new Set<string>();
+        docData.blocks.forEach(block => {
+            block.strokeIds.forEach(id => usedStrokeIds.add(id));
+        });
+        
+        docData.strokes = docData.strokes.filter(stroke => 
+            usedStrokeIds.has(stroke.id)
+        );
+        
+        // Aktualisierte Daten zurück ins Dokument
+        this.document = new InkDocument(docData);
+        
+        // In Datei speichern
+        await this.app.vault.modify(this.file, JSON.stringify(docData, null, 2));
+        
+        console.log('✅ Document saved successfully');
+        new Notice('Document saved');
+        
+    } catch (error) {
+        console.error('❌ Failed to save document:', error);
+        new Notice(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
+
+    private updateBlock(updates: PartialBlock): void {
+    const index = this.blocks.findIndex(b => b.id === updates.id);
+    if (index >= 0) {
+        const block = this.blocks[index];
+        if (block) {
+            // Block aktualisieren
+            Object.assign(block, updates);
+            
+            // Im Dokument aktualisieren (wenn Dokument existiert)
+            if (this.document) {
+                const docBlock = this.document.getBlock(block.id);
+                if (docBlock) {
+                    // Dokument-Block aktualisieren
+                    this.document.updateBlock(block.id, block);
+                } else {
+                    // Neuen Block zum Dokument hinzufügen
+                    this.document.addBlock(block);
                 }
             }
         }
     }
+}
 
     private setupEventListeners(): void {
         // Global keyboard shortcuts
