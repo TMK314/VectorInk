@@ -11,6 +11,7 @@ export class InkView extends FileView {
 
     // Drawing state
     private isDrawing = false;
+    private isErasing = false;
     private currentStroke: Point[] = [];
     private currentTool: 'pen' | 'eraser' | 'selection' = 'pen';
     private eraserMode: 'stroke' | 'point' = 'stroke';
@@ -34,6 +35,7 @@ export class InkView extends FileView {
     private marginBottomInput: HTMLInputElement | null = null;
 
     // Drawing settings
+    private widthMultiplier = 1.0;
     private pressureSensitivity = true;
     private smoothing = 0.3;
     private epsilon = 1.0; // For curve reduction
@@ -269,6 +271,41 @@ export class InkView extends FileView {
         colorToggleContainer.appendChild(colorToggle);
 
         this.toolbar.appendChild(colorToggleContainer);
+
+        // width multiplier
+        // Width Multiplier Einstellung - verbessere die onChange Funktion
+        const widthMultiplierInput = document.createElement('input');
+        widthMultiplierInput.type = 'range';
+        widthMultiplierInput.min = '0.5';
+        widthMultiplierInput.max = '4.0';
+        widthMultiplierInput.step = '0.1';
+        widthMultiplierInput.value = '1';
+        widthMultiplierInput.style.width = '60px';
+        widthMultiplierInput.style.verticalAlign = 'middle';
+
+        // Füge eine Anzeige für den aktuellen Wert hinzu
+        const multiplierValue = document.createElement('span');
+        multiplierValue.textContent = ` (${widthMultiplierInput.value}x)`;
+        multiplierValue.style.fontSize = '12px';
+
+        widthMultiplierInput.oninput = (e) => {
+            const value = parseFloat((e.target as HTMLInputElement).value);
+            this.widthMultiplier = value;
+            multiplierValue.textContent = ` (${value.toFixed(1)}x)`;
+
+            // Aktualisiere die Canvas-Anzeige
+            this.redrawAllBlocks();
+        };
+
+        widthMultiplierInput.onchange = (e) => {
+            const value = parseFloat((e.target as HTMLInputElement).value);
+            this.widthMultiplier = value;
+            multiplierValue.textContent = ` (${value.toFixed(1)}x)`;
+            this.redrawAllBlocks();
+        };
+
+        this.toolbar.appendChild(widthMultiplierInput);
+        this.toolbar.appendChild(multiplierValue);
 
         // Epsilon setting
         this.toolbar.appendChild(this.createSeparator());
@@ -563,7 +600,7 @@ export class InkView extends FileView {
         // Block click handler
         blockEl.onclick = (e) => {
             const target = e.target as HTMLElement;
-            if (!target.closest('select, button, input, canvas')) {
+            if (!target.closest('select, button, input')) {
                 this.currentBlockIndex = index;
                 this.renderBlocks();
             }
@@ -858,6 +895,7 @@ export class InkView extends FileView {
 
     private setupCanvasEvents(canvas: HTMLCanvasElement, blockIndex: number): void {
         let lastPoint: Point | null = null;
+        let lastErasePoint: Point | null = null; // Für kontinuierliches Radieren
 
         const getPoint = (e: MouseEvent | TouchEvent): Point | null => {
             const rect = canvas.getBoundingClientRect();
@@ -959,9 +997,58 @@ export class InkView extends FileView {
             block.strokeIds.push(addedStroke.id);
 
             this.updateBlockBoundingBox(block, simplifiedPoints);
-            this.syncBlockStrokes(block);   // <-- hier aufrufen
+            this.syncBlockStrokes(block);
 
             this.currentStroke = [];
+            lastPoint = null;
+        };
+
+        const startErasing = (point: Point) => {
+            if (blockIndex !== this.currentBlockIndex) return;
+
+            this.isErasing = true;
+            lastErasePoint = point;
+
+            // Sofort am Startpunkt radieren
+            this.eraseAtPoint(canvas, blockIndex, point);
+        };
+
+        const erase = (point: Point) => {
+            if (!this.isErasing || blockIndex !== this.currentBlockIndex) return;
+
+            // Kontinuierliches Radieren zwischen Punkten
+            if (lastErasePoint) {
+                // Interpoliere Punkte zwischen letztem und aktuellem Punkt
+                const distance = Math.sqrt(
+                    Math.pow(point.x - lastErasePoint.x, 2) +
+                    Math.pow(point.y - lastErasePoint.y, 2)
+                );
+
+                // Erhöhe die Dichte der Radierpunkte basierend auf Geschwindigkeit
+                const steps = Math.max(1, Math.floor(distance / 5));
+
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const interpolatedPoint: Point = {
+                        x: lastErasePoint.x + (point.x - lastErasePoint.x) * t,
+                        y: lastErasePoint.y + (point.y - lastErasePoint.y) * t,
+                        t: Date.now(),
+                        pressure: 0.5
+                    };
+
+                    this.eraseAtPoint(canvas, blockIndex, interpolatedPoint);
+                }
+            } else {
+                // Fallback: Einzelpunkt radieren
+                this.eraseAtPoint(canvas, blockIndex, point);
+            }
+
+            lastErasePoint = point;
+        };
+
+        const stopErasing = () => {
+            this.isErasing = false;
+            lastErasePoint = null;
         };
 
         // Mouse events
@@ -972,7 +1059,7 @@ export class InkView extends FileView {
             if (!point) return;
 
             if (this.currentTool === 'eraser') {
-                this.eraseAtPoint(canvas, blockIndex, point);
+                startErasing(point);
             } else if (this.currentTool === 'pen') {
                 startDrawing(point);
             }
@@ -980,67 +1067,74 @@ export class InkView extends FileView {
 
         const handleMouseMove = (e: MouseEvent) => {
             const point = getPoint(e);
-            if (point && this.isDrawing && this.currentTool === 'pen') {
+            if (!point) return;
+
+            if (this.currentTool === 'eraser' && this.isErasing) {
+                erase(point);
+            } else if (this.currentTool === 'pen' && this.isDrawing) {
                 draw(point);
+            }
+        };
+
+        const handleMouseUp = () => {
+            if (this.currentTool === 'pen') {
+                stopDrawing();
+            } else if (this.currentTool === 'eraser') {
+                stopErasing();
+            }
+        };
+
+        const handleMouseLeave = () => {
+            if (this.currentTool === 'pen') {
+                stopDrawing();
+            } else if (this.currentTool === 'eraser') {
+                stopErasing();
             }
         };
 
         canvas.onmousedown = handleMouseDown;
         canvas.onmousemove = handleMouseMove;
-        canvas.onmouseup = stopDrawing;
-        canvas.onmouseleave = stopDrawing;
+        canvas.onmouseup = handleMouseUp;
+        canvas.onmouseleave = handleMouseLeave;
 
         // Touch events for mobile/stylus
         const handleTouchStart = (e: TouchEvent) => {
             e.preventDefault();
             const point = getPoint(e);
-            if (point && this.currentTool === 'pen') {
-                startDrawing(point);
+            if (point) {
+                if (this.currentTool === 'eraser') {
+                    startErasing(point);
+                } else if (this.currentTool === 'pen') {
+                    startDrawing(point);
+                }
             }
         };
 
         const handleTouchMove = (e: TouchEvent) => {
             e.preventDefault();
             const point = getPoint(e);
-            if (point && this.isDrawing && this.currentTool === 'pen') {
-                draw(point);
+            if (point) {
+                if (this.currentTool === 'eraser' && this.isErasing) {
+                    erase(point);
+                } else if (this.currentTool === 'pen' && this.isDrawing) {
+                    draw(point);
+                }
             }
         };
 
         const handleTouchEnd = (e: TouchEvent) => {
             e.preventDefault();
-            stopDrawing();
+            if (this.currentTool === 'pen') {
+                stopDrawing();
+            } else if (this.currentTool === 'eraser') {
+                stopErasing();
+            }
         };
 
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
         canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
-    }
-
-    private setupCanvas(canvas: HTMLCanvasElement, block: Block): void {
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-
-        // Logische Größe (CSS)
-        const logicalWidth = block.bbox.width;
-        const logicalHeight = block.bbox.height;
-
-        // Canvas-Display-Größe (CSS)
-        canvas.style.width = `${logicalWidth}px`;
-        canvas.style.height = `${logicalHeight}px`;
-
-        // Canvas-Zeichenflächen-Größe (physikalische Pixel)
-        canvas.width = logicalWidth * dpr;
-        canvas.height = logicalHeight * dpr;
-
-        // Kontext skalieren
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.scale(dpr, dpr);
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-        }
     }
 
     private expandBlockDownwards(canvas: HTMLCanvasElement, block: Block, point: Point): void {
@@ -1316,47 +1410,149 @@ export class InkView extends FileView {
         }
     }
 
+    private redrawAllBlocks(): void {
+        if (!this.blocksContainer) return;
+
+        const canvases = this.blocksContainer.querySelectorAll('canvas');
+        canvases.forEach(canvas => {
+            const blockId = canvas.closest('.ink-block')?.getAttribute('data-block-id');
+            if (blockId) {
+                const block = this.blocks.find(b => b.id === blockId);
+                if (block) {
+                    // Erhalte den Canvas-Kontext und zeichne neu
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        // Canvas leeren
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                        // Hintergrund neu zeichnen
+                        const isDark = this.isDarkTheme();
+                        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                        // Strokes neu zeichnen
+                        this.drawBlockStrokes(canvas, block);
+                    }
+                }
+            }
+        });
+    }
+
     private eraseAtPoint(canvas: HTMLCanvasElement, blockIndex: number, point: Point): void {
         const block = this.blocks[blockIndex];
         if (!block || !this.document) return;
 
         const eraserRadius = this.currentPenStyle.width * 5;
+        const strokeIdsToRemove: string[] = [];
 
         if (this.eraserMode === 'stroke') {
-            // Erase entire strokes that intersect with the eraser
-            const strokesToRemove: string[] = [];
-
+            // Finde alle Striche, die den Radierradius schneiden
             for (const strokeId of block.strokeIds) {
                 const stroke = this.document.strokes.find(s => s.id === strokeId);
                 if (!stroke) continue;
 
-                // Check if any point in the stroke is within eraser radius
+                let strokeRemoved = false;
+
+                // Prüfe jeden Punkt im Strich
                 for (const p of stroke.points) {
                     const distance = Math.sqrt(
                         Math.pow(p.x - point.x, 2) + Math.pow(p.y - point.y, 2)
                     );
 
                     if (distance <= eraserRadius) {
-                        strokesToRemove.push(strokeId);
+                        strokeIdsToRemove.push(strokeId);
+                        strokeRemoved = true;
+                        break; // Einmal gefunden reicht
+                    }
+                }
+
+                // Falls der Strich sehr kurz ist, prüfe auch den Linienverlauf
+                if (!strokeRemoved && stroke.points.length >= 2) {
+                    for (let i = 0; i < stroke.points.length - 1; i++) {
+                        const p1 = stroke.points[i];
+                        const p2 = stroke.points[i + 1];
+
+                        if (p1 && p2) {
+                            const distanceToLine = this.distanceToLineSegment(point, p1, p2);
+                            if (distanceToLine <= eraserRadius) {
+                                strokeIdsToRemove.push(strokeId);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Punkt-für-Punkt Radieren (komplexer - würde Striche teilen)
+            // Für jetzt implementieren wir auch als Stroke-Eraser
+            for (const strokeId of block.strokeIds) {
+                const stroke = this.document.strokes.find(s => s.id === strokeId);
+                if (!stroke) continue;
+
+                for (const p of stroke.points) {
+                    const distance = Math.sqrt(
+                        Math.pow(p.x - point.x, 2) + Math.pow(p.y - point.y, 2)
+                    );
+
+                    if (distance <= eraserRadius) {
+                        strokeIdsToRemove.push(strokeId);
                         break;
                     }
                 }
             }
-
-            // Remove strokes from block
-            block.strokeIds = block.strokeIds.filter(id => !strokesToRemove.includes(id));
-
-        } else {
-            // Point-by-point erasing (more complex - would need to split strokes)
-            // For now, implement as stroke eraser
-            const originalMode = this.eraserMode;
-            this.eraserMode = 'stroke';
-            this.eraseAtPoint(canvas, blockIndex, point);
-            this.eraserMode = originalMode;
         }
 
-        // Redraw the block
-        this.drawBlockStrokes(canvas, block);
+        // Entferne Striche aus Block
+        if (strokeIdsToRemove.length > 0) {
+            const beforeCount = block.strokeIds.length;
+            block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
+            const removedCount = beforeCount - block.strokeIds.length;
+
+            // Entferne auch aus dem Dokument (optional, da cleanupOrphanedStrokes später aufräumt)
+            strokeIdsToRemove.forEach(strokeId => {
+                this.document?.removeStroke(strokeId);
+            });
+
+            // Redraw the block sofort
+            this.drawBlockStrokes(canvas, block);
+
+            // Debug-Ausgabe
+            // console.log(`Erased ${removedCount} strokes at (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
+        }
+    }
+
+    // Hilfsmethode für Abstand zu Liniensegment
+    private distanceToLineSegment(point: Point, lineStart: Point, lineEnd: Point): number {
+        const A = point.x - lineStart.x;
+        const B = point.y - lineStart.y;
+        const C = lineEnd.x - lineStart.x;
+        const D = lineEnd.y - lineStart.y;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        let param = -1;
+
+        if (lenSq !== 0) {
+            param = dot / lenSq;
+        }
+
+        let xx, yy;
+
+        if (param < 0) {
+            xx = lineStart.x;
+            yy = lineStart.y;
+        } else if (param > 1) {
+            xx = lineEnd.x;
+            yy = lineEnd.y;
+        } else {
+            xx = lineStart.x + param * C;
+            yy = lineStart.y + param * D;
+        }
+
+        const dx = point.x - xx;
+        const dy = point.y - yy;
+
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     private getCanvasForBlock(blockId: string): HTMLCanvasElement | null {
@@ -1376,61 +1572,61 @@ export class InkView extends FileView {
         italicMultiplier: number
     }> = {
             paragraph: {
-                baseWidth: 2,
+                baseWidth: 2 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-normal)'),
                 boldMultiplier: 1.5,
                 italicMultiplier: 0.8
             },
             heading1: {
-                baseWidth: 5,
+                baseWidth: 5 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-accent)'),
                 boldMultiplier: 2.0,
                 italicMultiplier: 0.8
             },
             heading2: {
-                baseWidth: 4,
+                baseWidth: 4 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-accent)'),
                 boldMultiplier: 2.0,
                 italicMultiplier: 0.8
             },
             heading3: {
-                baseWidth: 3.5,
+                baseWidth: 3.5 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-accent)'),
                 boldMultiplier: 2.0,
                 italicMultiplier: 0.8
             },
             heading4: {
-                baseWidth: 3,
+                baseWidth: 3 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-accent)'),
                 boldMultiplier: 2.0,
                 italicMultiplier: 0.8
             },
             heading5: {
-                baseWidth: 2.5,
+                baseWidth: 2.5 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-accent)'),
                 boldMultiplier: 2.0,
                 italicMultiplier: 0.8
             },
             quote: {
-                baseWidth: 2,
+                baseWidth: 2 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-muted)'),
                 boldMultiplier: 1.3,
                 italicMultiplier: 0.8
             },
             math: {
-                baseWidth: 2.5,
+                baseWidth: 2.5 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-accent-hover)'),
                 boldMultiplier: 1.5,
                 italicMultiplier: 0.8
             },
             drawing: {
-                baseWidth: 2,
+                baseWidth: 2 * this.widthMultiplier,
                 color: '',
                 boldMultiplier: 1.0,
                 italicMultiplier: 1.0
             },
             table: {
-                baseWidth: 2,
+                baseWidth: 2 * this.widthMultiplier,
                 color: this.resolveCanvasColor('var(--text-normal)'),
                 boldMultiplier: 1.5,
                 italicMultiplier: 0.8
@@ -1448,9 +1644,26 @@ export class InkView extends FileView {
             };
         }
 
-        // Für andere Blocktypen: Grundstil definieren
-        const baseStyle: StrokeStyle = {
-            width: 2,
+        // Hole die Basisbreite für diesen Blocktyp
+        let baseWidth: number;
+        switch (blockType) {
+            case 'paragraph': baseWidth = 2.0; break;
+            case 'heading1': baseWidth = 5.0; break;
+            case 'heading2': baseWidth = 4.0; break;
+            case 'heading3': baseWidth = 3.5; break;
+            case 'heading4': baseWidth = 3.0; break;
+            case 'heading5': baseWidth = 2.5; break;
+            case 'quote': baseWidth = 2.0; break;
+            case 'math': baseWidth = 2.5; break;
+            case 'table': baseWidth = 2.0; break;
+            default: baseWidth = 2.0; break;
+        }
+
+        // Multiplikator anwenden
+        baseWidth *= this.widthMultiplier;
+
+        const style: StrokeStyle = {
+            width: baseWidth,
             color: this.useColorForStyling
                 ? this.resolveCanvasColor(originalStyle.color)
                 : this.getThemeAdaptiveColor('#000000'),
@@ -1458,20 +1671,14 @@ export class InkView extends FileView {
             opacity: 1.0
         };
 
-        // Für Überschriften: Unterschiedliche Breiten
-        if (blockType.startsWith('heading')) {
-            const headingLevel = parseInt(blockType.replace('heading', ''));
-            baseStyle.width = 5 - (headingLevel * 0.5); // H1: 4.5, H2: 4, H3: 3.5, etc.
-        }
-
         // Formatierung anwenden
         if (originalStyle.semantic === 'bold') {
-            baseStyle.width *= 1.5;
+            style.width *= 1.5;
         } else if (originalStyle.semantic === 'italic') {
-            baseStyle.width *= 0.9;
+            style.width *= 0.9;
         }
 
-        return baseStyle;
+        return style;
     }
 
     private getThemeAdaptiveColor(defaultColor: string): string {
@@ -1484,72 +1691,8 @@ export class InkView extends FileView {
         const isDark = this.isDarkTheme();
         console.log('Theme changed. Is dark:', isDark);
 
-        this.blockTypeStyles = {
-            paragraph: {
-                baseWidth: 2,
-                color: isDark ? 'var(--text-normal)' : 'var(--text-normal)',
-                boldMultiplier: 1.5,
-                italicMultiplier: 0.8
-            },
-            heading1: {
-                baseWidth: 4,
-                color: isDark ? 'var(--text-accent)' : 'var(--text-accent)',
-                boldMultiplier: 2.0,
-                italicMultiplier: 0.8
-            },
-            heading2: {
-                baseWidth: 3.5,
-                color: isDark ? 'var(--text-accent)' : 'var(--text-accent)',
-                boldMultiplier: 2.0,
-                italicMultiplier: 0.8
-            },
-            heading3: {
-                baseWidth: 3,
-                color: isDark ? 'var(--text-accent)' : 'var(--text-accent)',
-                boldMultiplier: 2.0,
-                italicMultiplier: 0.8
-            },
-            heading4: {
-                baseWidth: 2.5,
-                color: isDark ? 'var(--text-accent)' : 'var(--text-accent)',
-                boldMultiplier: 2.0,
-                italicMultiplier: 0.8
-            },
-            heading5: {
-                baseWidth: 2.25,
-                color: isDark ? 'var(--text-accent)' : 'var(--text-accent)',
-                boldMultiplier: 2.0,
-                italicMultiplier: 0.8
-            },
-            quote: {
-                baseWidth: 2,
-                color: isDark ? 'var(--text-muted)' : 'var(--text-muted)',
-                boldMultiplier: 1.3,
-                italicMultiplier: 0.8
-            },
-            math: {
-                baseWidth: 2.5,
-                color: isDark ? 'var(--text-accent-hover)' : 'var(--text-accent-hover)',
-                boldMultiplier: 1.5,
-                italicMultiplier: 0.8
-            },
-            drawing: {
-                baseWidth: 2,
-                color: '',
-                boldMultiplier: 1.0,
-                italicMultiplier: 1.0
-            },
-            table: {
-                baseWidth: 2,
-                color: isDark ? 'var(--text-normal)' : 'var(--text-normal)',
-                boldMultiplier: 1.5,
-                italicMultiplier: 0.8
-            }
-        };
-
-        // Alle Blöcke neu rendern
-        this.renderBlocks();
-        this.setupThemeObserver();
+        // Aktualisiere alle Blöcke
+        this.redrawAllBlocks();
     }
 
     private setupThemeObserver(): void {
@@ -1640,6 +1783,16 @@ export class InkView extends FileView {
 
     private setTool(tool: 'pen' | 'eraser' | 'selection'): void {
         this.currentTool = tool;
+
+        // Stelle sicher, dass alle Zeichen- und Radier-Zustände zurückgesetzt werden
+        if (tool !== 'pen') {
+            this.isDrawing = false;
+            this.currentStroke = [];
+        }
+        if (tool !== 'eraser') {
+            this.isErasing = false;
+        }
+
         new Notice(`Tool set to: ${tool}`);
     }
 
