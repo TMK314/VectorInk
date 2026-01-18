@@ -26,7 +26,7 @@ export interface BoundingBox {
     height: number;
 }
 
-export type BlockType = 'paragraph' | 'heading' | 'quote' | 'math' | 'drawing' | 'table';
+export type BlockType = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'quote' | 'math' | 'drawing' | 'table';
 
 export interface Block {
     id: string;
