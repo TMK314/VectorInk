@@ -38,6 +38,8 @@ export class InkView extends FileView {
     private smoothing = 0.3;
     private epsilon = 1.0; // For curve reduction
 
+    private useColorForStyling = true;
+
     // Block height expansion
     private readonly BLOCK_EXPANSION_THRESHOLD = 50; // pixels
     private readonly BLOCK_EXPANSION_AMOUNT = 100; // pixels
@@ -105,6 +107,7 @@ export class InkView extends FileView {
     async setupUI(): Promise<void> {
         this.contentEl.empty();
         this.contentEl.classList.add('ink-view-container');
+        this.contentEl.style.backgroundColor = 'var(--background-primary)';
 
         // Main layout
         const main = document.createElement('div');
@@ -112,6 +115,7 @@ export class InkView extends FileView {
         main.style.flexDirection = 'column';
         main.style.height = '100%';
         main.style.overflow = 'hidden';
+        main.style.backgroundColor = 'var(--background-primary)';
         this.contentEl.appendChild(main);
 
         // Create toolbar
@@ -122,7 +126,7 @@ export class InkView extends FileView {
         this.blocksContainer.style.flex = '1';
         this.blocksContainer.style.overflow = 'auto';
         this.blocksContainer.style.padding = '20px';
-        this.blocksContainer.style.backgroundColor = '#f5f5f5';
+        this.blocksContainer.style.backgroundColor = 'var(--background-primary)';
         main.appendChild(this.blocksContainer);
 
         // Load blocks
@@ -135,6 +139,8 @@ export class InkView extends FileView {
 
         this.renderBlocks();
         this.setupEventListeners();
+        this.setupThemeObserver();
+        this.setupThemeSync();
     }
 
     createToolbar(container: HTMLElement): void {
@@ -146,6 +152,7 @@ export class InkView extends FileView {
         this.toolbar.style.borderBottom = '1px solid var(--background-modifier-border)';
         this.toolbar.style.flexWrap = 'wrap';
         this.toolbar.style.alignItems = 'center';
+        this.toolbar.style.background = 'var(--background-primary)'; // Theme-Anpassung
 
         // Save button
         const saveBtn = this.createToolbarButton('💾', 'Save', () => this.saveDocument());
@@ -160,20 +167,31 @@ export class InkView extends FileView {
         // Pen settings
         this.toolbar.appendChild(this.createSeparator());
 
-        // Color picker
+        // Color picker - WICHTIG: Dieses Element fehlte
+        const colorLabel = document.createElement('span');
+        colorLabel.textContent = 'Color:';
+        colorLabel.style.fontSize = '12px';
+        this.toolbar.appendChild(colorLabel);
+
         const colorInput = document.createElement('input');
         colorInput.type = 'color';
-        colorInput.value = '#000000';
+        colorInput.value = this.getThemeAdaptiveColor('#000000');
         colorInput.style.width = '30px';
         colorInput.style.height = '30px';
+        colorInput.style.cursor = 'pointer';
+        colorInput.style.verticalAlign = 'middle';
         colorInput.onchange = (e) => {
-            this.currentPenStyle.color = (e.target as HTMLInputElement).value;
+            const selectedColor = (e.target as HTMLInputElement).value;
+            this.currentPenStyle.color = selectedColor;
+            // Aktualisiere die Standardstift-Farbvorschläge basierend auf Theme
+            this.updateThemeColors();
         };
-        this.toolbar.appendChild(colorInput);
+        this.toolbar.appendChild(colorInput); // WICHTIG: Dies war vergessen
 
-        // Opacity slider
+        // Opacity slider - nur für drawing blocks relevant
         const opacityLabel = document.createElement('span');
         opacityLabel.textContent = 'Opacity:';
+        opacityLabel.style.fontSize = '12px';
         this.toolbar.appendChild(opacityLabel);
 
         const opacityInput = document.createElement('input');
@@ -182,14 +200,16 @@ export class InkView extends FileView {
         opacityInput.max = '100';
         opacityInput.value = '100';
         opacityInput.style.width = '60px';
+        opacityInput.style.verticalAlign = 'middle';
         opacityInput.onchange = (e) => {
             this.currentPenStyle.opacity = parseInt((e.target as HTMLInputElement).value) / 100;
         };
         this.toolbar.appendChild(opacityInput);
 
-        // Width slider
+        // Width slider - nur für drawing blocks relevant
         const widthLabel = document.createElement('span');
         widthLabel.textContent = 'Width:';
+        widthLabel.style.fontSize = '12px';
         this.toolbar.appendChild(widthLabel);
 
         const widthInput = document.createElement('input');
@@ -198,6 +218,7 @@ export class InkView extends FileView {
         widthInput.max = '20';
         widthInput.value = '2';
         widthInput.style.width = '60px';
+        widthInput.style.verticalAlign = 'middle';
         widthInput.onchange = (e) => {
             this.currentPenStyle.width = parseInt((e.target as HTMLInputElement).value);
         };
@@ -217,6 +238,33 @@ export class InkView extends FileView {
         formatContainer.appendChild(boldBtn);
         formatContainer.appendChild(italicBtn);
         this.toolbar.appendChild(formatContainer);
+
+        // Color Toggle
+        this.toolbar.appendChild(this.createSeparator());
+
+        const colorToggleContainer = document.createElement('div');
+        colorToggleContainer.style.display = 'flex';
+        colorToggleContainer.style.alignItems = 'center';
+        colorToggleContainer.style.gap = '5px';
+
+        const colorToggleLabel = document.createElement('span');
+        colorToggleLabel.textContent = 'Use Color:';
+        colorToggleLabel.style.fontSize = '12px';
+        colorToggleContainer.appendChild(colorToggleLabel);
+
+        const colorToggle = document.createElement('input');
+        colorToggle.type = 'checkbox';
+        colorToggle.checked = this.useColorForStyling;
+        colorToggle.style.transform = 'scale(0.9)';
+        colorToggle.style.verticalAlign = 'middle';
+        colorToggle.onchange = (e) => {
+            this.useColorForStyling = (e.target as HTMLInputElement).checked;
+            this.renderBlocks(); // Alle Blöcke neu zeichnen
+            new Notice(this.useColorForStyling ? 'Using color for styling' : 'Using block-based styling');
+        };
+        colorToggleContainer.appendChild(colorToggle);
+
+        this.toolbar.appendChild(colorToggleContainer);
 
         // Epsilon setting
         this.toolbar.appendChild(this.createSeparator());
@@ -435,7 +483,7 @@ export class InkView extends FileView {
         canvas.style.height = block.bbox.height + 'px';
         canvas.style.border = '1px solid var(--background-modifier-border)';
         canvas.style.borderRadius = '4px';
-        canvas.style.background = 'white'; // 'var(--background-primary)';
+        canvas.style.background = 'var(--background-primary)';
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -717,16 +765,25 @@ export class InkView extends FileView {
 
             // Draw line
             ctx.lineTo(point.x, point.y);
-            ctx.strokeStyle = this.currentPenStyle.color;
-            ctx.globalAlpha = this.currentPenStyle.opacity || 1;
 
-            // Apply pressure sensitivity
-            let width = this.currentPenStyle.width;
-            if (this.pressureSensitivity && point.pressure) {
-                width *= point.pressure * 2;
+            // Stil basierend auf Block-Typ berechnen
+            const currentBlock = this.blocks[this.currentBlockIndex];
+            if (currentBlock) {
+                const displayStyle = this.getCalculatedStrokeStyle(
+                    currentBlock.type,
+                    this.currentPenStyle
+                );
+
+                ctx.strokeStyle = displayStyle.color;
+                ctx.globalAlpha = displayStyle.opacity || 1;
+                ctx.lineWidth = displayStyle.width;
+            } else {
+                // Fallback
+                ctx.strokeStyle = this.currentPenStyle.color;
+                ctx.globalAlpha = this.currentPenStyle.opacity || 1;
+                ctx.lineWidth = this.currentPenStyle.width;
             }
 
-            ctx.lineWidth = width;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
@@ -869,60 +926,6 @@ export class InkView extends FileView {
         }
     }
 
-    private getCanvasCoordinates(canvas: HTMLCanvasElement, clientX: number, clientY: number): Point {
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-
-        return {
-            x: (clientX - rect.left) * (canvas.width / (rect.width * dpr)),
-            y: (clientY - rect.top) * (canvas.height / (rect.height * dpr)),
-            t: Date.now(),
-            pressure: 0.5
-        };
-    }
-
-    private resizeCanvas(canvas: HTMLCanvasElement): void {
-        if (this.blocks[this.currentBlockIndex] !== undefined) {
-            this.updateCanvasHeight(canvas, this.blocks[this.currentBlockIndex]!);
-        }
-
-        /*const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.scale(dpr, dpr);
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-        }*/
-    }
-
-    private updateCanvasHeight(canvas: HTMLCanvasElement, block: Block): void {
-        if (!this.document) return;
-
-        // Finde die maximalen y-Koordinaten aller Strokes im Block
-        let maxY = 0;
-        for (const strokeId of block.strokeIds) {
-            const stroke = this.document.getStroke(strokeId);
-            if (!stroke) continue;
-            for (const p of stroke.points) {
-                if (p.y > maxY) maxY = p.y;
-            }
-        }
-
-        // Höhe mit Padding
-        const padding = 20;
-        const newHeight = Math.max(block.bbox.height, maxY + padding);
-
-        if (newHeight !== canvas.height) {
-            canvas.height = newHeight;
-            block.bbox.height = newHeight;
-            this.drawBlockStrokes(canvas, block);
-        }
-    }
-
     private updateBlockCanvasSize(block: Block, canvas: HTMLCanvasElement) {
         if (!this.document) return;
 
@@ -947,52 +950,6 @@ export class InkView extends FileView {
 
         if (this.blocksContainer) {
             this.blocksContainer.scrollTop = scrollBefore;
-        }
-    }
-
-    private stopDrawing(): void {
-        if (!this.isDrawing || !this.document) return;
-
-        this.isDrawing = false;
-        if (this.currentStroke.length < 2) return;
-
-        const block = this.blocks[this.currentBlockIndex];
-        if (!block) return;
-
-        // Stroke erstellen
-        const simplifiedPoints = this.simplifyStroke(this.currentStroke, this.epsilon);
-        const stroke: Stroke = {
-            id: crypto.randomUUID(),
-            points: simplifiedPoints,
-            style: { ...this.currentPenStyle },
-            createdAt: new Date().toISOString()
-        };
-
-        try {
-            // Stroke zum Dokument hinzufügen
-            const addedStroke = this.document.addStroke(stroke);
-
-            // Stroke-ID dem Block hinzufügen
-            if (!block.strokeIds.includes(addedStroke.id)) {
-                block.strokeIds.push(addedStroke.id);
-            }
-
-            // Bounding Box aktualisieren
-            this.updateBlockBoundingBox(block, simplifiedPoints);
-
-            // Canvas neu zeichnen
-            const canvas = this.getCanvasForBlock(block.id);
-            if (canvas) {
-                this.drawBlockStrokes(canvas, block);
-            }
-
-            // Sofort speichern (optional)
-            // await this.saveDocument();
-
-        } catch (error) {
-            console.error('Failed to add stroke:', error);
-        } finally {
-            this.currentStroke = [];
         }
     }
 
@@ -1031,7 +988,13 @@ export class InkView extends FileView {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        // Canvas leeren
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Canvas-Hintergrund an Theme anpassen
+        const isDark = this.isDarkTheme();
+        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         for (const strokeId of block.strokeIds) {
             const stroke = this.document.strokes.find(s => s.id === strokeId);
@@ -1050,9 +1013,12 @@ export class InkView extends FileView {
                 }
             }
 
-            ctx.strokeStyle = stroke.style.color;
-            ctx.globalAlpha = stroke.style.opacity || 1;
-            ctx.lineWidth = stroke.style.width;
+            // Stil basierend auf Block-Typ berechnen
+            const displayStyle = this.getCalculatedStrokeStyle(block.type, stroke.style);
+
+            ctx.strokeStyle = displayStyle.color;
+            ctx.globalAlpha = displayStyle.opacity || 1;
+            ctx.lineWidth = displayStyle.width;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
@@ -1201,6 +1167,223 @@ export class InkView extends FileView {
         return blockEl.querySelector('canvas') as HTMLCanvasElement;
     }
 
+
+    /* ------------------ Styling ------------------ */
+
+    private blockTypeStyles: Record<BlockType, {
+        baseWidth: number,
+        color: string,
+        boldMultiplier: number,
+        italicMultiplier: number
+    }> = {
+            paragraph: {
+                baseWidth: 2,
+                color: this.resolveCanvasColor('var(--text-normal)'),
+                boldMultiplier: 1.5,
+                italicMultiplier: 0.8
+            },
+            heading: {
+                baseWidth: 3,
+                color: this.resolveCanvasColor('var(--text-accent)'),
+                boldMultiplier: 2.0,
+                italicMultiplier: 0.8
+            },
+            quote: {
+                baseWidth: 2,
+                color: this.resolveCanvasColor('var(--text-muted)'),
+                boldMultiplier: 1.3,
+                italicMultiplier: 0.8
+            },
+            math: {
+                baseWidth: 2.5,
+                color: this.resolveCanvasColor('var(--text-accent-hover)'),
+                boldMultiplier: 1.5,
+                italicMultiplier: 0.8
+            },
+            drawing: {
+                baseWidth: 2,
+                color: '',
+                boldMultiplier: 1.0,
+                italicMultiplier: 1.0
+            },
+            table: {
+                baseWidth: 2,
+                color: this.resolveCanvasColor('var(--text-normal)'),
+                boldMultiplier: 1.5,
+                italicMultiplier: 0.8
+            }
+        };
+
+    private getCalculatedStrokeStyle(blockType: BlockType, originalStyle: StrokeStyle): StrokeStyle {
+        const isDrawing = blockType === 'drawing';
+        const isDark = this.isDarkTheme();
+
+        if (isDrawing) {
+            // Zeichnungen behalten immer Originalstil mit Theme-Anpassung
+            const adjustedColor = isDark ? '#ffffff' : '#000000';
+            return {
+                ...originalStyle,
+                color: originalStyle.color
+            };
+        }
+
+        const blockStyle = this.blockTypeStyles[blockType];
+        const style: StrokeStyle = {
+            width: blockStyle.baseWidth,
+            color: this.useColorForStyling ?
+                this.resolveCanvasColor(originalStyle.color) :
+                (isDark ? '#ffffff' : '#000000'),
+            semantic: originalStyle.semantic,
+            opacity: 1.0
+        };
+
+        // Formatierung anwenden
+        if (originalStyle.semantic === 'bold') {
+            style.width *= blockStyle.boldMultiplier;
+            style.color = this.useColorForStyling ?
+                this.resolveCanvasColor(originalStyle.color) :
+                blockStyle.color;
+        } else if (originalStyle.semantic === 'italic') {
+            style.width *= blockStyle.italicMultiplier;
+            style.color = this.useColorForStyling ?
+                this.resolveCanvasColor(originalStyle.color) :
+                blockStyle.color;
+        }
+
+        return style;
+    }
+
+    private getThemeAdaptiveColor(defaultColor: string): string {
+        const isDarkTheme = this.isDarkTheme();
+
+        return isDarkTheme ? '#ffffff' : '#000000';
+    }
+
+    private updateThemeColors(): void {
+        const isDark = this.isDarkTheme();
+        console.log('Theme changed. Is dark:', isDark);
+
+        this.blockTypeStyles = {
+            paragraph: {
+                baseWidth: 2,
+                color: isDark ? 'var(--text-normal)' : 'var(--text-normal)',
+                boldMultiplier: 1.5,
+                italicMultiplier: 0.8
+            },
+            heading: {
+                baseWidth: 3,
+                color: isDark ? 'var(--text-accent)' : 'var(--text-accent)',
+                boldMultiplier: 2.0,
+                italicMultiplier: 0.8
+            },
+            quote: {
+                baseWidth: 2,
+                color: isDark ? 'var(--text-muted)' : 'var(--text-muted)',
+                boldMultiplier: 1.3,
+                italicMultiplier: 0.8
+            },
+            math: {
+                baseWidth: 2.5,
+                color: isDark ? 'var(--text-accent-hover)' : 'var(--text-accent-hover)',
+                boldMultiplier: 1.5,
+                italicMultiplier: 0.8
+            },
+            drawing: {
+                baseWidth: 2,
+                color: '',
+                boldMultiplier: 1.0,
+                italicMultiplier: 1.0
+            },
+            table: {
+                baseWidth: 2,
+                color: isDark ? 'var(--text-normal)' : 'var(--text-normal)',
+                boldMultiplier: 1.5,
+                italicMultiplier: 0.8
+            }
+        };
+
+        // Alle Blöcke neu rendern
+        this.renderBlocks();
+        this.setupThemeObserver();
+    }
+
+    private setupThemeObserver(): void {
+        // Observer für Theme-Änderungen
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                    this.updateThemeColors();
+                    this.renderBlocks();
+                }
+            });
+        });
+
+        observer.observe(document.body, { attributes: true });
+
+        // Cleanup speichern
+        (this as any)._themeObserver = observer;
+    }
+
+    private isDarkTheme(): boolean {
+        return document.body.classList.contains('theme-dark');
+    }
+
+    private setupThemeSync(): void {
+        // Initiale Theme-Anpassung
+        this.updateThemeBasedOnCurrent();
+
+        // Observer für Theme-Änderungen
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                    this.updateThemeBasedOnCurrent();
+                }
+            });
+        });
+
+        observer.observe(document.body, { attributes: true });
+
+        // Cleanup speichern
+        (this as any)._themeObserver = observer;
+    }
+
+    private updateThemeBasedOnCurrent(): void {
+        const isDark = this.isDarkTheme();
+
+        // Canvas-Hintergrund in allen Blöcken aktualisieren
+        if (this.blocksContainer) {
+            const canvases = this.blocksContainer.querySelectorAll('canvas');
+            canvases.forEach(canvas => {
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    // Strokes neu zeichnen
+                    const blockId = canvas.closest('.ink-block')?.getAttribute('data-block-id');
+                    if (blockId) {
+                        const block = this.blocks.find(b => b.id === blockId);
+                        if (block) {
+                            this.drawBlockStrokes(canvas, block);
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    private resolveCanvasColor(color: string): string {
+        if (!color) return '#000000';
+
+        // CSS-Variable auflösen
+        if (color.startsWith('var(')) {
+            const varName = color.slice(4, -1).trim();
+            const computed = getComputedStyle(document.body).getPropertyValue(varName);
+            return computed.trim() || '#000000';
+        }
+
+        return color;
+    }
 
     /* ------------------ Tools ------------------ */
 

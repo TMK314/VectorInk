@@ -1,5 +1,6 @@
 import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
+import '../styles/main.css';
 
 export default class VectorInkPlugin extends Plugin {
 	async onload() {
