@@ -63,42 +63,42 @@ export class InkView extends FileView {
     }
 
     async onClose(): Promise<void> {
-    // Dokument automatisch speichern beim Schließen
-    try {
-        await this.saveDocument();
-    } catch (error) {
-        console.error('Failed to save on close:', error);
-    }
-    
-    // Event Listener aufräumen
-    const handleKeyDown = (this as any)._handleKeyDown;
-    if (handleKeyDown) {
-        document.removeEventListener('keydown', handleKeyDown);
-    }
-}
+        // Dokument automatisch speichern beim Schließen
+        try {
+            await this.saveDocument();
+        } catch (error) {
+            console.error('Failed to save on close:', error);
+        }
 
-private cleanupOrphanedStrokes(): void {
-    if (!this.document) return;
-    
-    // Alle verwendeten Stroke-IDs sammeln
-    const usedStrokeIds = new Set<string>();
-    this.blocks.forEach(block => {
-        block.strokeIds.forEach(id => usedStrokeIds.add(id));
-    });
-    
-    // Alle Strokes im Dokument durchgehen
-    const allStrokes = this.document.strokes;
-    const orphanedStrokes = allStrokes.filter(stroke => 
-        !usedStrokeIds.has(stroke.id)
-    );
-    
-    if (orphanedStrokes.length > 0) {
-        console.log(`🧹 Cleaning up ${orphanedStrokes.length} orphaned strokes`);
-        orphanedStrokes.forEach(stroke => {
-            this.document!.removeStroke(stroke.id);
-        });
+        // Event Listener aufräumen
+        const handleKeyDown = (this as any)._handleKeyDown;
+        if (handleKeyDown) {
+            document.removeEventListener('keydown', handleKeyDown);
+        }
     }
-}
+
+    private cleanupOrphanedStrokes(): void {
+        if (!this.document) return;
+
+        // Alle verwendeten Stroke-IDs sammeln
+        const usedStrokeIds = new Set<string>();
+        this.blocks.forEach(block => {
+            block.strokeIds.forEach(id => usedStrokeIds.add(id));
+        });
+
+        // Alle Strokes im Dokument durchgehen
+        const allStrokes = this.document.strokes;
+        const orphanedStrokes = allStrokes.filter(stroke =>
+            !usedStrokeIds.has(stroke.id)
+        );
+
+        if (orphanedStrokes.length > 0) {
+            console.log(`🧹 Cleaning up ${orphanedStrokes.length} orphaned strokes`);
+            orphanedStrokes.forEach(stroke => {
+                this.document!.removeStroke(stroke.id);
+            });
+        }
+    }
 
     /* ------------------ UI Setup ------------------ */
 
@@ -356,7 +356,7 @@ private cleanupOrphanedStrokes(): void {
         blockEl.style.marginBottom = `${this.blockMargins.bottom}px`;
         blockEl.style.border = index === this.currentBlockIndex ? '2px solid var(--interactive-accent)' : '1px solid var(--background-modifier-border)';
         blockEl.style.borderRadius = '8px';
-        blockEl.style.background = 'white';
+        blockEl.style.background = 'var(--background-primary)';
         blockEl.style.padding = '15px';
         blockEl.style.minHeight = '150px';
 
@@ -415,6 +415,9 @@ private cleanupOrphanedStrokes(): void {
         const clearBtn = this.createBlockControlButton('🗑️', 'Clear block', () => this.clearBlock(block.id));
         controls.appendChild(clearBtn);
 
+        const createBtn = this.createBlockControlButton('+', 'Create block', () => this.addNewBlockAtPosition('paragraph', block.order + 1));
+        controls.appendChild(createBtn);
+
         // Delete button
         const deleteBtn = this.createBlockControlButton('✕', 'Delete block', () => this.deleteBlock(block.id));
         deleteBtn.style.color = 'var(--text-error)';
@@ -432,7 +435,7 @@ private cleanupOrphanedStrokes(): void {
         canvas.style.height = block.bbox.height + 'px';
         canvas.style.border = '1px solid var(--background-modifier-border)';
         canvas.style.borderRadius = '4px';
-        canvas.style.background = 'white';
+        canvas.style.background = 'white'; // 'var(--background-primary)';
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -478,6 +481,41 @@ private cleanupOrphanedStrokes(): void {
             onClick();
         };
         return button;
+    }
+
+    private addNewBlockAtPosition(type: BlockType, position: number): void {
+        const newBlock: Block = {
+            id: crypto.randomUUID(),
+            type,
+            strokeIds: [],
+            bbox: {
+                x: 20,
+                y: position * 250 + 20,
+                width: 760,
+                height: 200
+            },
+            order: position
+        };
+
+        // Block an Position einfügen
+        this.blocks.splice(position, 0, newBlock);
+
+        // Orders neu berechnen
+        this.blocks.forEach((b, idx) => {
+            b.order = idx;
+        });
+
+        // Neuen Block auswählen
+        this.currentBlockIndex = position;
+        this.renderBlocks();
+
+        // Automatisch scrollen, damit der neue Block sichtbar ist
+        setTimeout(() => {
+            const blockEl = this.blocksContainer?.querySelector(`.ink-block[data-block-id="${newBlock.id}"]`);
+            if (blockEl) {
+                blockEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }, 50);
     }
 
     private addNewBlock(type: BlockType, order: number, select = false): void {
@@ -548,65 +586,65 @@ private cleanupOrphanedStrokes(): void {
     }
 
     private clearBlock(blockId: string): void {
-    const blockIndex = this.blocks.findIndex(b => b.id === blockId);
-    if (blockIndex >= 0) {
-        const block = this.blocks[blockIndex];
-        if (block && this.document) {
-            // Alle Strokes des Blocks aus dem Dokument entfernen
-            block.strokeIds.forEach(strokeId => {
-                if (this.document) { // Nullprüfung hinzufügen
-                    this.document.removeStroke(strokeId);
+        const blockIndex = this.blocks.findIndex(b => b.id === blockId);
+        if (blockIndex >= 0) {
+            const block = this.blocks[blockIndex];
+            if (block && this.document) {
+                // Alle Strokes des Blocks aus dem Dokument entfernen
+                block.strokeIds.forEach(strokeId => {
+                    if (this.document) { // Nullprüfung hinzufügen
+                        this.document.removeStroke(strokeId);
+                    }
+                });
+
+                // Block leeren
+                block.strokeIds = [];
+
+                // Canvas neu zeichnen
+                const canvas = this.getCanvasForBlock(blockId);
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    }
                 }
-            });
-            
-            // Block leeren
-            block.strokeIds = [];
-            
-            // Canvas neu zeichnen
-            const canvas = this.getCanvasForBlock(blockId);
-            if (canvas) {
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                }
+
+                this.renderBlocks();
+                new Notice('Block cleared');
             }
-            
-            this.renderBlocks();
-            new Notice('Block cleared');
         }
     }
-}
 
     private deleteBlock(blockId: string): void {
-    const blockIndex = this.blocks.findIndex(b => b.id === blockId);
-    if (blockIndex >= 0) {
-        const block = this.blocks[blockIndex];
-        
-        // Strokes aus dem Dokument entfernen
-        if (block && this.document) {
-            block.strokeIds.forEach(strokeId => {
-                if (this.document) { // Nullprüfung hinzufügen
-                    this.document.removeStroke(strokeId);
-                }
-            });
+        const blockIndex = this.blocks.findIndex(b => b.id === blockId);
+        if (blockIndex >= 0) {
+            const block = this.blocks[blockIndex];
+
+            // Strokes aus dem Dokument entfernen
+            if (block && this.document) {
+                block.strokeIds.forEach(strokeId => {
+                    if (this.document) { // Nullprüfung hinzufügen
+                        this.document.removeStroke(strokeId);
+                    }
+                });
+            }
+
+            // Block aus der Liste entfernen
+            this.blocks.splice(blockIndex, 1);
+
+            // Order neu nummerieren
+            this.blocks.forEach((b, idx) => b.order = idx);
+
+            // Aktuellen Index anpassen
+            this.currentBlockIndex = Math.min(
+                Math.max(0, this.currentBlockIndex - 1),
+                this.blocks.length - 1
+            );
+
+            this.renderBlocks();
+            new Notice('Block deleted');
         }
-        
-        // Block aus der Liste entfernen
-        this.blocks.splice(blockIndex, 1);
-        
-        // Order neu nummerieren
-        this.blocks.forEach((b, idx) => b.order = idx);
-        
-        // Aktuellen Index anpassen
-        this.currentBlockIndex = Math.min(
-            Math.max(0, this.currentBlockIndex - 1),
-            this.blocks.length - 1
-        );
-        
-        this.renderBlocks();
-        new Notice('Block deleted');
     }
-}
 
     private updateBlockMargins(): void {
         if (!this.blocksContainer) return;
@@ -913,50 +951,50 @@ private cleanupOrphanedStrokes(): void {
     }
 
     private stopDrawing(): void {
-    if (!this.isDrawing || !this.document) return;
+        if (!this.isDrawing || !this.document) return;
 
-    this.isDrawing = false;
-    if (this.currentStroke.length < 2) return;
+        this.isDrawing = false;
+        if (this.currentStroke.length < 2) return;
 
-    const block = this.blocks[this.currentBlockIndex];
-    if (!block) return;
+        const block = this.blocks[this.currentBlockIndex];
+        if (!block) return;
 
-    // Stroke erstellen
-    const simplifiedPoints = this.simplifyStroke(this.currentStroke, this.epsilon);
-    const stroke: Stroke = {
-        id: crypto.randomUUID(),
-        points: simplifiedPoints,
-        style: { ...this.currentPenStyle },
-        createdAt: new Date().toISOString()
-    };
+        // Stroke erstellen
+        const simplifiedPoints = this.simplifyStroke(this.currentStroke, this.epsilon);
+        const stroke: Stroke = {
+            id: crypto.randomUUID(),
+            points: simplifiedPoints,
+            style: { ...this.currentPenStyle },
+            createdAt: new Date().toISOString()
+        };
 
-    try {
-        // Stroke zum Dokument hinzufügen
-        const addedStroke = this.document.addStroke(stroke);
-        
-        // Stroke-ID dem Block hinzufügen
-        if (!block.strokeIds.includes(addedStroke.id)) {
-            block.strokeIds.push(addedStroke.id);
+        try {
+            // Stroke zum Dokument hinzufügen
+            const addedStroke = this.document.addStroke(stroke);
+
+            // Stroke-ID dem Block hinzufügen
+            if (!block.strokeIds.includes(addedStroke.id)) {
+                block.strokeIds.push(addedStroke.id);
+            }
+
+            // Bounding Box aktualisieren
+            this.updateBlockBoundingBox(block, simplifiedPoints);
+
+            // Canvas neu zeichnen
+            const canvas = this.getCanvasForBlock(block.id);
+            if (canvas) {
+                this.drawBlockStrokes(canvas, block);
+            }
+
+            // Sofort speichern (optional)
+            // await this.saveDocument();
+
+        } catch (error) {
+            console.error('Failed to add stroke:', error);
+        } finally {
+            this.currentStroke = [];
         }
-        
-        // Bounding Box aktualisieren
-        this.updateBlockBoundingBox(block, simplifiedPoints);
-        
-        // Canvas neu zeichnen
-        const canvas = this.getCanvasForBlock(block.id);
-        if (canvas) {
-            this.drawBlockStrokes(canvas, block);
-        }
-        
-        // Sofort speichern (optional)
-        // await this.saveDocument();
-        
-    } catch (error) {
-        console.error('Failed to add stroke:', error);
-    } finally {
-        this.currentStroke = [];
     }
-}
 
     private syncBlockStrokes(block: Block): void {
         if (!this.document) return;
@@ -1336,72 +1374,72 @@ private cleanupOrphanedStrokes(): void {
 
     // Korrigierte saveDocument-Methode:
     async saveDocument(): Promise<void> {
-    if (!this.document || !this.file) {
-        console.error('❌ No document or file to save');
-        new Notice('No document to save');
-        return;
-    }
+        if (!this.document || !this.file) {
+            console.error('❌ No document or file to save');
+            new Notice('No document to save');
+            return;
+        }
 
-    try {
-        console.log('💾 Saving document...');
-        
-        // Dokument-Daten vorbereiten
-        const docData = this.document.getData();
-        
-        // Blöcke ins Dokument übertragen
-        docData.blocks = this.blocks.map(block => ({
-            ...block,
-            // Sicherstellen, dass strokeIds aktuell sind
-            strokeIds: [...block.strokeIds]
-        })).sort((a, b) => a.order - b.order);
-        
-        // Strokes filtern: Nur Strokes behalten, die in Blöcken referenziert sind
-        const usedStrokeIds = new Set<string>();
-        docData.blocks.forEach(block => {
-            block.strokeIds.forEach(id => usedStrokeIds.add(id));
-        });
-        
-        docData.strokes = docData.strokes.filter(stroke => 
-            usedStrokeIds.has(stroke.id)
-        );
-        
-        // Aktualisierte Daten zurück ins Dokument
-        this.document = new InkDocument(docData);
-        
-        // In Datei speichern
-        await this.app.vault.modify(this.file, JSON.stringify(docData, null, 2));
-        
-        console.log('✅ Document saved successfully');
-        new Notice('Document saved');
-        
-    } catch (error) {
-        console.error('❌ Failed to save document:', error);
-        new Notice(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        try {
+            console.log('💾 Saving document...');
+
+            // Dokument-Daten vorbereiten
+            const docData = this.document.getData();
+
+            // Blöcke ins Dokument übertragen
+            docData.blocks = this.blocks.map(block => ({
+                ...block,
+                // Sicherstellen, dass strokeIds aktuell sind
+                strokeIds: [...block.strokeIds]
+            })).sort((a, b) => a.order - b.order);
+
+            // Strokes filtern: Nur Strokes behalten, die in Blöcken referenziert sind
+            const usedStrokeIds = new Set<string>();
+            docData.blocks.forEach(block => {
+                block.strokeIds.forEach(id => usedStrokeIds.add(id));
+            });
+
+            docData.strokes = docData.strokes.filter(stroke =>
+                usedStrokeIds.has(stroke.id)
+            );
+
+            // Aktualisierte Daten zurück ins Dokument
+            this.document = new InkDocument(docData);
+
+            // In Datei speichern
+            await this.app.vault.modify(this.file, JSON.stringify(docData, null, 2));
+
+            console.log('✅ Document saved successfully');
+            new Notice('Document saved');
+
+        } catch (error) {
+            console.error('❌ Failed to save document:', error);
+            new Notice(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
     }
-}
 
     private updateBlock(updates: PartialBlock): void {
-    const index = this.blocks.findIndex(b => b.id === updates.id);
-    if (index >= 0) {
-        const block = this.blocks[index];
-        if (block) {
-            // Block aktualisieren
-            Object.assign(block, updates);
-            
-            // Im Dokument aktualisieren (wenn Dokument existiert)
-            if (this.document) {
-                const docBlock = this.document.getBlock(block.id);
-                if (docBlock) {
-                    // Dokument-Block aktualisieren
-                    this.document.updateBlock(block.id, block);
-                } else {
-                    // Neuen Block zum Dokument hinzufügen
-                    this.document.addBlock(block);
+        const index = this.blocks.findIndex(b => b.id === updates.id);
+        if (index >= 0) {
+            const block = this.blocks[index];
+            if (block) {
+                // Block aktualisieren
+                Object.assign(block, updates);
+
+                // Im Dokument aktualisieren (wenn Dokument existiert)
+                if (this.document) {
+                    const docBlock = this.document.getBlock(block.id);
+                    if (docBlock) {
+                        // Dokument-Block aktualisieren
+                        this.document.updateBlock(block.id, block);
+                    } else {
+                        // Neuen Block zum Dokument hinzufügen
+                        this.document.addBlock(block);
+                    }
                 }
             }
         }
     }
-}
 
     private setupEventListeners(): void {
         // Global keyboard shortcuts
