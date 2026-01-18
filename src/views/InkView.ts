@@ -1219,8 +1219,6 @@ export class InkView extends FileView {
         const isDark = this.isDarkTheme();
 
         if (isDrawing) {
-            // Zeichnungen behalten immer Originalstil mit Theme-Anpassung
-            const adjustedColor = isDark ? '#ffffff' : '#000000';
             return {
                 ...originalStyle,
                 color: originalStyle.color
