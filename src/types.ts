@@ -1,3 +1,5 @@
+import { CubicBezier } from "bezierFitting";
+
 export interface Point {
     x: number;
     y: number;
@@ -15,6 +17,7 @@ export interface StrokeStyle {
 export interface Stroke {
     id: string;
     points: Point[];
+    bezierCurves?: CubicBezier[];
     style: StrokeStyle;
     createdAt: string;
 }

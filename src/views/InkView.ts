@@ -2,6 +2,8 @@ import { FileView, WorkspaceLeaf, Notice, TFile } from 'obsidian';
 import VectorInkPlugin from '../main';
 import { InkDocument } from '../model/InkDocument';
 import { Point, Stroke, StrokeStyle, Block, BlockType, BoundingBox, PartialBlock } from '../types';
+import { BezierCurveFitter } from 'bezierFitting';
+import { CubicBezier } from 'bezierFitting';
 
 export const INK_VIEW_TYPE = 'ink-view';
 
@@ -1015,10 +1017,12 @@ export class InkView extends FileView {
             const block = this.blocks[this.currentBlockIndex];
             if (!block) return;
 
-            const simplifiedPoints = this.simplifyStroke(this.currentStroke, this.epsilon);
+            // Vereinfachen und Bézier-Kurven erzeugen
+            const simplified = this.simplifyStroke(this.currentStroke, this.epsilon);
             const stroke: Stroke = {
                 id: crypto.randomUUID(),
-                points: simplifiedPoints,
+                points: simplified.points,         // Reduzierte Punkte für Bounding Box
+                bezierCurves: simplified.bezierCurves,  // Bézier-Kurven für Rendering
                 style: { ...this.currentPenStyle },
                 createdAt: new Date().toISOString()
             };
@@ -1026,11 +1030,18 @@ export class InkView extends FileView {
             const addedStroke = this.document.addStroke(stroke);
             block.strokeIds.push(addedStroke.id);
 
-            this.updateBlockBoundingBox(block, simplifiedPoints);
+            this.updateBlockBoundingBox(block, simplified.points);
             this.syncBlockStrokes(block);
 
             this.currentStroke = [];
             lastPoint = null;
+
+            // Debug-Info
+            if (simplified.bezierCurves.length > 0) {
+                console.log(`✓ Stroke saved with ${simplified.bezierCurves.length} bezier curves ` +
+                    `(${simplified.bezierCurves.length * 4} control points) ` +
+                    `instead of ${this.currentStroke.length} raw points`);
+            }
         };
 
         const startErasing = (point: Point) => {
@@ -1326,89 +1337,72 @@ export class InkView extends FileView {
 
         for (const strokeId of block.strokeIds) {
             const stroke = this.document.strokes.find(s => s.id === strokeId);
-            if (!stroke || stroke.points.length < 2) continue;
-
-            const first = stroke.points[0];
-            if (!first) continue;
-
-            ctx.beginPath();
-            ctx.moveTo(first.x, first.y);
-
-            for (let i = 1; i < stroke.points.length; i++) {
-                const p = stroke.points[i];
-                if (p) {
-                    ctx.lineTo(p.x, p.y);
-                }
-            }
+            if (!stroke) continue;
 
             // Stil basierend auf Block-Typ berechnen
             const displayStyle = this.getCalculatedStrokeStyle(block.type, stroke.style);
 
-            ctx.strokeStyle = displayStyle.color;
-            ctx.globalAlpha = displayStyle.opacity || 1;
-            ctx.lineWidth = displayStyle.width;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.stroke();
+            // Verwende Bézier-Kurven wenn vorhanden, sonst fallback zu Punkten
+            if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
+                this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
+            } else if (stroke.points.length >= 2) {
+                this.drawLinearStroke(ctx, stroke.points, displayStyle);
+            }
         }
     }
 
-    private simplifyStroke(points: Point[], epsilon: number): Point[] {
-        if (points.length <= 2) return points;
+    private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {
+        console.log('simplifyStroke called with:', points.length, 'points, epsilon:', epsilon);
 
-        const findFurthestPoint = (points: Point[], start: number, end: number): number => {
-            let maxDistance = 0;
-            let index = start;
+        if (points.length <= 2) {
+            console.log('Too few points, returning original');
+            return {
+                points: points,
+                bezierCurves: []
+            };
+        }
 
-            const startPoint = points[start];
-            const endPoint = points[end];
-            if (!startPoint || !endPoint) return -1;
+        const fitter = new BezierCurveFitter({
+            epsilon: epsilon,
+            minSegmentLength: 40,  // Erhöht für weniger Segmente
+            usePressure: this.pressureSensitivity
+        });
 
-            for (let i = start + 1; i < end; i++) {
-                const point = points[i];
-                if (!point) continue;
-                const distance = this.perpendicularDistance(point, startPoint, endPoint);
-                if (distance > maxDistance) {
-                    maxDistance = distance;
-                    index = i;
+        try {
+            const bezierCurves = fitter.fitCurve(points);
+            console.log('Generated', bezierCurves.length, 'bezier curves');
+
+            // Berechne vereinfachte Punkte nur für Bounding Box (extrem reduziert)
+            const simplifiedPoints: Point[] = [];
+
+            // Nimm nur Start- und Endpunkte jeder Bézier-Kurve plus einige wenige Punkte dazwischen
+            for (const bezier of bezierCurves) {
+                simplifiedPoints.push(bezier.p0);  // Startpunkt
+
+                // Füge 1-2 Punkte in der Mitte hinzu für genauere Bounding Box
+                simplifiedPoints.push(fitter.evaluateBezier(bezier, 0.5));  // Mittelpunkt
+
+                if (bezierCurves.indexOf(bezier) === bezierCurves.length - 1) {
+                    simplifiedPoints.push(bezier.p3);  // Endpunkt nur für letzte Kurve
                 }
             }
 
-            return maxDistance > epsilon ? index : -1;
-        };
+            console.log('Reduced from', points.length, 'to', simplifiedPoints.length, 'points for bounding box');
+            console.log('Storing', bezierCurves.length, 'bezier curves (each with 4 control points =',
+                bezierCurves.length * 4, 'total stored points)');
 
-        const douglasPeucker = (points: Point[], start: number, end: number, epsilon: number): Point[] => {
-            const startPoint = points[start];
-            const endPoint = points[end];
-            if (!startPoint || !endPoint) return [startPoint, endPoint].filter(Boolean) as Point[];
+            return {
+                points: simplifiedPoints,  // Nur für Bounding Box
+                bezierCurves: bezierCurves  // Die eigentlichen Daten
+            };
 
-            const furthest = findFurthestPoint(points, start, end);
-
-            if (furthest === -1) {
-                return [startPoint, endPoint];
-            }
-
-            const left = douglasPeucker(points, start, furthest, epsilon);
-            const right = douglasPeucker(points, furthest, end, epsilon);
-
-            return left.slice(0, -1).concat(right);
-        };
-
-        return douglasPeucker(points, 0, points.length - 1, epsilon);
-    }
-
-    private perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
-        const area = Math.abs(
-            (lineEnd.x - lineStart.x) * (lineStart.y - point.y) -
-            (lineStart.x - point.x) * (lineEnd.y - lineStart.y)
-        );
-
-        const lineLength = Math.sqrt(
-            Math.pow(lineEnd.x - lineStart.x, 2) +
-            Math.pow(lineEnd.y - lineStart.y, 2)
-        );
-
-        return lineLength === 0 ? 0 : area / lineLength;
+        } catch (error) {
+            console.error('Bezier fitting error:', error);
+            return {
+                points: points,
+                bezierCurves: []
+            };
+        }
     }
 
     private updateBlockBoundingBox(block: Block, points: Point[]): void {
@@ -1611,148 +1605,148 @@ export class InkView extends FileView {
     }
 
     private calculateOptimalBlockSize(block: Block): { width: number, height: number } {
-    if (!this.document) {
-        return { width: block.bbox.width, height: block.bbox.height };
-    }
-    
-    const isSelected = this.blocks.findIndex(b => b.id === block.id) === this.currentBlockIndex;
-    
-    // Mindestgrößen definieren
-    const MIN_WIDTH = 760;
-    const MIN_HEIGHT_SELECTED = 200;  // Für ausgewählte Blöcke
-    const MIN_HEIGHT_UNSELECTED = 150; // Für nicht-ausgewählte Blöcke
-    const MIN_HEIGHT = isSelected ? MIN_HEIGHT_SELECTED : MIN_HEIGHT_UNSELECTED;
-    
-    // Wenn keine Striche vorhanden sind, Standardgröße zurückgeben
-    if (block.strokeIds.length === 0) {
-        return {
-            width: MIN_WIDTH,
-            height: MIN_HEIGHT
-        };
-    }
-    
-    // Bounding Box aller Striche berechnen
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
-    let hasStrokes = false;
-    
-    for (const strokeId of block.strokeIds) {
-        const stroke = this.document.strokes.find(s => s.id === strokeId);
-        if (!stroke || stroke.points.length === 0) continue;
-        
-        hasStrokes = true;
-        
-        for (const point of stroke.points) {
-            minX = Math.min(minX, point.x);
-            maxX = Math.max(maxX, point.x);
-            minY = Math.min(minY, point.y);
-            maxY = Math.max(maxY, point.y);
+        if (!this.document) {
+            return { width: block.bbox.width, height: block.bbox.height };
+        }
+
+        const isSelected = this.blocks.findIndex(b => b.id === block.id) === this.currentBlockIndex;
+
+        // Mindestgrößen definieren
+        const MIN_WIDTH = 760;
+        const MIN_HEIGHT_SELECTED = 200;  // Für ausgewählte Blöcke
+        const MIN_HEIGHT_UNSELECTED = 150; // Für nicht-ausgewählte Blöcke
+        const MIN_HEIGHT = isSelected ? MIN_HEIGHT_SELECTED : MIN_HEIGHT_UNSELECTED;
+
+        // Wenn keine Striche vorhanden sind, Standardgröße zurückgeben
+        if (block.strokeIds.length === 0) {
+            return {
+                width: MIN_WIDTH,
+                height: MIN_HEIGHT
+            };
+        }
+
+        // Bounding Box aller Striche berechnen
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        let hasStrokes = false;
+
+        for (const strokeId of block.strokeIds) {
+            const stroke = this.document.strokes.find(s => s.id === strokeId);
+            if (!stroke || stroke.points.length === 0) continue;
+
+            hasStrokes = true;
+
+            for (const point of stroke.points) {
+                minX = Math.min(minX, point.x);
+                maxX = Math.max(maxX, point.x);
+                minY = Math.min(minY, point.y);
+                maxY = Math.max(maxY, point.y);
+            }
+        }
+
+        // Wenn keine gültigen Punkte gefunden wurden
+        if (!hasStrokes || minX === Infinity || maxX === -Infinity || minY === Infinity || maxY === -Infinity) {
+            return {
+                width: MIN_WIDTH,
+                height: MIN_HEIGHT
+            };
+        }
+
+        // Padding hinzufügen (mehr Padding für bessere Sichtbarkeit)
+        const horizontalPadding = 80;
+        const verticalPadding = 60;
+
+        // Berechnete Größen
+        let calculatedWidth = maxX - minX + horizontalPadding;
+        let calculatedHeight = maxY - minY + verticalPadding;
+
+        // Sicherstellen, dass wir Mindestgrößen einhalten
+        calculatedWidth = Math.max(MIN_WIDTH, calculatedWidth);
+        calculatedHeight = Math.max(MIN_HEIGHT, calculatedHeight);
+
+        // Begrenze die maximale Größe (optional)
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 800;
+        calculatedWidth = Math.min(MAX_WIDTH, calculatedWidth);
+        calculatedHeight = Math.min(MAX_HEIGHT, calculatedHeight);
+
+        // Prüfen, ob eine Verkleinerung sinnvoll ist
+        const currentHeight = block.bbox.height;
+        const shrinkThreshold = 80; // Höhere Schwelle, um nicht zu oft zu verkleinern
+
+        // Nur verkleinern, wenn der Block deutlich zu groß ist
+        if (currentHeight - calculatedHeight > shrinkThreshold) {
+            return {
+                width: calculatedWidth,
+                height: calculatedHeight
+            };
+        } else {
+            // Behalte die aktuelle Größe bei, wenn die Differenz zu gering ist
+            return {
+                width: Math.max(block.bbox.width, MIN_WIDTH),
+                height: Math.max(block.bbox.height, MIN_HEIGHT)
+            };
         }
     }
-    
-    // Wenn keine gültigen Punkte gefunden wurden
-    if (!hasStrokes || minX === Infinity || maxX === -Infinity || minY === Infinity || maxY === -Infinity) {
-        return {
-            width: MIN_WIDTH,
-            height: MIN_HEIGHT
-        };
-    }
-    
-    // Padding hinzufügen (mehr Padding für bessere Sichtbarkeit)
-    const horizontalPadding = 80;
-    const verticalPadding = 60;
-    
-    // Berechnete Größen
-    let calculatedWidth = maxX - minX + horizontalPadding;
-    let calculatedHeight = maxY - minY + verticalPadding;
-    
-    // Sicherstellen, dass wir Mindestgrößen einhalten
-    calculatedWidth = Math.max(MIN_WIDTH, calculatedWidth);
-    calculatedHeight = Math.max(MIN_HEIGHT, calculatedHeight);
-    
-    // Begrenze die maximale Größe (optional)
-    const MAX_WIDTH = 1200;
-    const MAX_HEIGHT = 800;
-    calculatedWidth = Math.min(MAX_WIDTH, calculatedWidth);
-    calculatedHeight = Math.min(MAX_HEIGHT, calculatedHeight);
-    
-    // Prüfen, ob eine Verkleinerung sinnvoll ist
-    const currentHeight = block.bbox.height;
-    const shrinkThreshold = 80; // Höhere Schwelle, um nicht zu oft zu verkleinern
-    
-    // Nur verkleinern, wenn der Block deutlich zu groß ist
-    if (currentHeight - calculatedHeight > shrinkThreshold) {
-        return {
-            width: calculatedWidth,
-            height: calculatedHeight
-        };
-    } else {
-        // Behalte die aktuelle Größe bei, wenn die Differenz zu gering ist
-        return {
-            width: Math.max(block.bbox.width, MIN_WIDTH),
-            height: Math.max(block.bbox.height, MIN_HEIGHT)
-        };
-    }
-}
 
     private adjustBlockSize(blockId: string): void {
-    const blockIndex = this.blocks.findIndex(b => b.id === blockId);
-    if (blockIndex === -1) return;
-    
-    const block = this.blocks[blockIndex];
-    const canvas = this.getCanvasForBlock(blockId);
-    
-    if (typeof block === 'undefined' || canvas === null) return;
-    if (!canvas) return;
-    
-    // Optimale Größe berechnen
-    const optimalSize = this.calculateOptimalBlockSize(block);
-    
-    // Nur aktualisieren, wenn sich die Größe signifikant ändert
-    const widthChanged = Math.abs(block.bbox.width - optimalSize.width) > 20;
-    const heightChanged = Math.abs(block.bbox.height - optimalSize.height) > 20;
-    
-    if (widthChanged || heightChanged) {
-        // Größe aktualisieren
-        block.bbox.width = optimalSize.width;
-        block.bbox.height = optimalSize.height;
-        
-        // Canvas-Größe aktualisieren
-        const dpr = window.devicePixelRatio || 1;
-        const oldWidth = canvas.width;
-        const oldHeight = canvas.height;
-        
-        canvas.width = block.bbox.width * dpr;
-        canvas.height = block.bbox.height * dpr;
-        
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.scale(dpr, dpr);
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
+        const blockIndex = this.blocks.findIndex(b => b.id === blockId);
+        if (blockIndex === -1) return;
+
+        const block = this.blocks[blockIndex];
+        const canvas = this.getCanvasForBlock(blockId);
+
+        if (typeof block === 'undefined' || canvas === null) return;
+        if (!canvas) return;
+
+        // Optimale Größe berechnen
+        const optimalSize = this.calculateOptimalBlockSize(block);
+
+        // Nur aktualisieren, wenn sich die Größe signifikant ändert
+        const widthChanged = Math.abs(block.bbox.width - optimalSize.width) > 20;
+        const heightChanged = Math.abs(block.bbox.height - optimalSize.height) > 20;
+
+        if (widthChanged || heightChanged) {
+            // Größe aktualisieren
+            block.bbox.width = optimalSize.width;
+            block.bbox.height = optimalSize.height;
+
+            // Canvas-Größe aktualisieren
+            const dpr = window.devicePixelRatio || 1;
+            const oldWidth = canvas.width;
+            const oldHeight = canvas.height;
+
+            canvas.width = block.bbox.width * dpr;
+            canvas.height = block.bbox.height * dpr;
+
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.scale(dpr, dpr);
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+            }
+
+            // CSS-Größe aktualisieren
+            canvas.style.width = `${block.bbox.width}px`;
+            canvas.style.height = `${block.bbox.height}px`;
+
+            // Strokes neu zeichnen
+            this.drawBlockStrokes(canvas, block);
+
+            // Block-Element-Höhe anpassen
+            const blockEl = canvas.closest('.ink-block') as HTMLElement;
+            if (blockEl) {
+                const isSelected = blockIndex === this.currentBlockIndex;
+                // Extra Raum für Controls hinzufügen
+                const extraHeight = isSelected ? 120 : 80;
+                blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
+            }
+
+            console.log(`Block ${blockId} adjusted: ${oldWidth / dpr}x${oldHeight / dpr} -> ${optimalSize.width}x${optimalSize.height}`);
         }
-        
-        // CSS-Größe aktualisieren
-        canvas.style.width = `${block.bbox.width}px`;
-        canvas.style.height = `${block.bbox.height}px`;
-        
-        // Strokes neu zeichnen
-        this.drawBlockStrokes(canvas, block);
-        
-        // Block-Element-Höhe anpassen
-        const blockEl = canvas.closest('.ink-block') as HTMLElement;
-        if (blockEl) {
-            const isSelected = blockIndex === this.currentBlockIndex;
-            // Extra Raum für Controls hinzufügen
-            const extraHeight = isSelected ? 120 : 80;
-            blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
-        }
-        
-        console.log(`Block ${blockId} adjusted: ${oldWidth/dpr}x${oldHeight/dpr} -> ${optimalSize.width}x${optimalSize.height}`);
     }
-}
 
     /* ------------------ Styling ------------------ */
 
@@ -2115,6 +2109,60 @@ export class InkView extends FileView {
         }
 
         return content;
+    }
+
+    /* ------------------ Rendering ------------------ */
+    private drawBezierStroke(
+        ctx: CanvasRenderingContext2D,
+        bezierCurves: CubicBezier[],
+        displayStyle: StrokeStyle
+    ): void {
+        if (bezierCurves.length === 0) return;
+
+        ctx.strokeStyle = displayStyle.color;
+        ctx.globalAlpha = displayStyle.opacity || 1;
+        ctx.lineWidth = displayStyle.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        for (const bezier of bezierCurves) {
+            ctx.beginPath();
+            ctx.moveTo(bezier.p0.x, bezier.p0.y);
+            ctx.bezierCurveTo(
+                bezier.p1.x, bezier.p1.y,
+                bezier.p2.x, bezier.p2.y,
+                bezier.p3.x, bezier.p3.y
+            );
+            ctx.stroke();
+        }
+    }
+
+    private drawLinearStroke(
+        ctx: CanvasRenderingContext2D,
+        points: Point[],
+        displayStyle: StrokeStyle
+    ): void {
+        if (points.length < 2) return;
+
+        ctx.strokeStyle = displayStyle.color;
+        ctx.globalAlpha = displayStyle.opacity || 1;
+        ctx.lineWidth = displayStyle.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        ctx.beginPath();
+        if (points[0]) {
+            ctx.moveTo(points[0].x, points[0].y);
+
+            for (let i = 1; i < points.length; i++) {
+                const point = points[i];
+                if (point) {
+                    ctx.lineTo(point.x, point.y);
+                }
+            }
+
+            ctx.stroke();
+        }
     }
 
     /* ------------------ Persistence ------------------ */
