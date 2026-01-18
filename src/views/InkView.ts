@@ -820,13 +820,43 @@ export class InkView extends FileView {
                 // Block leeren
                 block.strokeIds = [];
 
-                // Canvas neu zeichnen
+                // Canvas neu zeichnen (leer)
                 const canvas = this.getCanvasForBlock(blockId);
                 if (canvas) {
                     const ctx = canvas.getContext('2d');
                     if (ctx) {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        const isDark = this.isDarkTheme();
+                        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
                     }
+                }
+
+                // Blockgröße auf Standard zurücksetzen
+                const isSelected = blockIndex === this.currentBlockIndex;
+                block.bbox.width = 760;
+                block.bbox.height = isSelected ? 200 : 120;
+
+                // Canvas-Größe aktualisieren
+                if (canvas) {
+                    const dpr = window.devicePixelRatio || 1;
+                    canvas.width = block.bbox.width * dpr;
+                    canvas.height = block.bbox.height * dpr;
+
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.scale(dpr, dpr);
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'high';
+                    }
+
+                    canvas.style.width = `${block.bbox.width}px`;
+                    canvas.style.height = `${block.bbox.height}px`;
+                }
+
+                // Block-Element-Höhe aktualisieren
+                const blockEl = this.blocksContainer?.querySelector(`.ink-block[data-block-id="${blockId}"]`) as HTMLElement;
+                if (blockEl) {
+                    blockEl.style.minHeight = `${block.bbox.height + (isSelected ? 100 : 50)}px`;
                 }
 
                 this.renderBlocks();
@@ -1049,6 +1079,14 @@ export class InkView extends FileView {
         const stopErasing = () => {
             this.isErasing = false;
             lastErasePoint = null;
+
+            // Blockgröße nach dem Radieren anpassen
+            const block = this.blocks[blockIndex];
+            if (block) {
+                setTimeout(() => {
+                    this.adjustBlockSize(block.id);
+                }, 50);
+            }
         };
 
         // Mouse events
@@ -1444,6 +1482,7 @@ export class InkView extends FileView {
 
         const eraserRadius = this.currentPenStyle.width * 5;
         const strokeIdsToRemove: string[] = [];
+        let strokesRemoved = false;
 
         if (this.eraserMode === 'stroke') {
             // Finde alle Striche, die den Radierradius schneiden
@@ -1462,6 +1501,7 @@ export class InkView extends FileView {
                     if (distance <= eraserRadius) {
                         strokeIdsToRemove.push(strokeId);
                         strokeRemoved = true;
+                        strokesRemoved = true;
                         break; // Einmal gefunden reicht
                     }
                 }
@@ -1476,6 +1516,7 @@ export class InkView extends FileView {
                             const distanceToLine = this.distanceToLineSegment(point, p1, p2);
                             if (distanceToLine <= eraserRadius) {
                                 strokeIdsToRemove.push(strokeId);
+                                strokesRemoved = true;
                                 break;
                             }
                         }
@@ -1483,8 +1524,7 @@ export class InkView extends FileView {
                 }
             }
         } else {
-            // Punkt-für-Punkt Radieren (komplexer - würde Striche teilen)
-            // Für jetzt implementieren wir auch als Stroke-Eraser
+            // Punkt-für-Punkt Radieren
             for (const strokeId of block.strokeIds) {
                 const stroke = this.document.strokes.find(s => s.id === strokeId);
                 if (!stroke) continue;
@@ -1496,6 +1536,7 @@ export class InkView extends FileView {
 
                     if (distance <= eraserRadius) {
                         strokeIdsToRemove.push(strokeId);
+                        strokesRemoved = true;
                         break;
                     }
                 }
@@ -1508,13 +1549,20 @@ export class InkView extends FileView {
             block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
             const removedCount = beforeCount - block.strokeIds.length;
 
-            // Entferne auch aus dem Dokument (optional, da cleanupOrphanedStrokes später aufräumt)
+            // Entferne auch aus dem Dokument
             strokeIdsToRemove.forEach(strokeId => {
                 this.document?.removeStroke(strokeId);
             });
 
             // Redraw the block sofort
             this.drawBlockStrokes(canvas, block);
+
+            // Blockgröße anpassen, wenn Striche entfernt wurden
+            if (strokesRemoved) {
+                setTimeout(() => {
+                    this.adjustBlockSize(block.id);
+                }, 100); // Kurze Verzögerung für bessere Performance
+            }
 
             // Debug-Ausgabe
             // console.log(`Erased ${removedCount} strokes at (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
@@ -1562,6 +1610,149 @@ export class InkView extends FileView {
         return blockEl.querySelector('canvas') as HTMLCanvasElement;
     }
 
+    private calculateOptimalBlockSize(block: Block): { width: number, height: number } {
+    if (!this.document) {
+        return { width: block.bbox.width, height: block.bbox.height };
+    }
+    
+    const isSelected = this.blocks.findIndex(b => b.id === block.id) === this.currentBlockIndex;
+    
+    // Mindestgrößen definieren
+    const MIN_WIDTH = 760;
+    const MIN_HEIGHT_SELECTED = 200;  // Für ausgewählte Blöcke
+    const MIN_HEIGHT_UNSELECTED = 150; // Für nicht-ausgewählte Blöcke
+    const MIN_HEIGHT = isSelected ? MIN_HEIGHT_SELECTED : MIN_HEIGHT_UNSELECTED;
+    
+    // Wenn keine Striche vorhanden sind, Standardgröße zurückgeben
+    if (block.strokeIds.length === 0) {
+        return {
+            width: MIN_WIDTH,
+            height: MIN_HEIGHT
+        };
+    }
+    
+    // Bounding Box aller Striche berechnen
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let hasStrokes = false;
+    
+    for (const strokeId of block.strokeIds) {
+        const stroke = this.document.strokes.find(s => s.id === strokeId);
+        if (!stroke || stroke.points.length === 0) continue;
+        
+        hasStrokes = true;
+        
+        for (const point of stroke.points) {
+            minX = Math.min(minX, point.x);
+            maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+        }
+    }
+    
+    // Wenn keine gültigen Punkte gefunden wurden
+    if (!hasStrokes || minX === Infinity || maxX === -Infinity || minY === Infinity || maxY === -Infinity) {
+        return {
+            width: MIN_WIDTH,
+            height: MIN_HEIGHT
+        };
+    }
+    
+    // Padding hinzufügen (mehr Padding für bessere Sichtbarkeit)
+    const horizontalPadding = 80;
+    const verticalPadding = 60;
+    
+    // Berechnete Größen
+    let calculatedWidth = maxX - minX + horizontalPadding;
+    let calculatedHeight = maxY - minY + verticalPadding;
+    
+    // Sicherstellen, dass wir Mindestgrößen einhalten
+    calculatedWidth = Math.max(MIN_WIDTH, calculatedWidth);
+    calculatedHeight = Math.max(MIN_HEIGHT, calculatedHeight);
+    
+    // Begrenze die maximale Größe (optional)
+    const MAX_WIDTH = 1200;
+    const MAX_HEIGHT = 800;
+    calculatedWidth = Math.min(MAX_WIDTH, calculatedWidth);
+    calculatedHeight = Math.min(MAX_HEIGHT, calculatedHeight);
+    
+    // Prüfen, ob eine Verkleinerung sinnvoll ist
+    const currentHeight = block.bbox.height;
+    const shrinkThreshold = 80; // Höhere Schwelle, um nicht zu oft zu verkleinern
+    
+    // Nur verkleinern, wenn der Block deutlich zu groß ist
+    if (currentHeight - calculatedHeight > shrinkThreshold) {
+        return {
+            width: calculatedWidth,
+            height: calculatedHeight
+        };
+    } else {
+        // Behalte die aktuelle Größe bei, wenn die Differenz zu gering ist
+        return {
+            width: Math.max(block.bbox.width, MIN_WIDTH),
+            height: Math.max(block.bbox.height, MIN_HEIGHT)
+        };
+    }
+}
+
+    private adjustBlockSize(blockId: string): void {
+    const blockIndex = this.blocks.findIndex(b => b.id === blockId);
+    if (blockIndex === -1) return;
+    
+    const block = this.blocks[blockIndex];
+    const canvas = this.getCanvasForBlock(blockId);
+    
+    if (typeof block === 'undefined' || canvas === null) return;
+    if (!canvas) return;
+    
+    // Optimale Größe berechnen
+    const optimalSize = this.calculateOptimalBlockSize(block);
+    
+    // Nur aktualisieren, wenn sich die Größe signifikant ändert
+    const widthChanged = Math.abs(block.bbox.width - optimalSize.width) > 20;
+    const heightChanged = Math.abs(block.bbox.height - optimalSize.height) > 20;
+    
+    if (widthChanged || heightChanged) {
+        // Größe aktualisieren
+        block.bbox.width = optimalSize.width;
+        block.bbox.height = optimalSize.height;
+        
+        // Canvas-Größe aktualisieren
+        const dpr = window.devicePixelRatio || 1;
+        const oldWidth = canvas.width;
+        const oldHeight = canvas.height;
+        
+        canvas.width = block.bbox.width * dpr;
+        canvas.height = block.bbox.height * dpr;
+        
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.scale(dpr, dpr);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+        }
+        
+        // CSS-Größe aktualisieren
+        canvas.style.width = `${block.bbox.width}px`;
+        canvas.style.height = `${block.bbox.height}px`;
+        
+        // Strokes neu zeichnen
+        this.drawBlockStrokes(canvas, block);
+        
+        // Block-Element-Höhe anpassen
+        const blockEl = canvas.closest('.ink-block') as HTMLElement;
+        if (blockEl) {
+            const isSelected = blockIndex === this.currentBlockIndex;
+            // Extra Raum für Controls hinzufügen
+            const extraHeight = isSelected ? 120 : 80;
+            blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
+        }
+        
+        console.log(`Block ${blockId} adjusted: ${oldWidth/dpr}x${oldHeight/dpr} -> ${optimalSize.width}x${optimalSize.height}`);
+    }
+}
 
     /* ------------------ Styling ------------------ */
 
