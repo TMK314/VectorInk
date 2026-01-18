@@ -127,10 +127,10 @@ export class BezierCurveFitter {
             currentSegment.push(curr);
 
             // Weniger aggressive Segmentierungsregeln
-            const shouldSplit = 
+            const shouldSplit =
                 // Nur bei starken Wendepunkten (Vorzeichenwechsel UND hohe Krümmung)
-                (i > 1 && curvatures[i - 1]! * curvatures[i]! < 0 && 
-                 Math.abs(curvatures[i]!) > this.options.curvatureThreshold * 2) ||
+                (i > 1 && curvatures[i - 1]! * curvatures[i]! < 0 &&
+                    Math.abs(curvatures[i]!) > this.options.curvatureThreshold * 2) ||
                 // Sehr hohe Krümmungsänderung
                 (i > 1 && Math.abs(curvatures[i]! - curvatures[i - 1]!) > this.options.curvatureThreshold * 3) ||
                 // Sehr lange Segmente
@@ -253,92 +253,149 @@ export class BezierCurveFitter {
     /**
      * Kubische Bézierkurve an Punkte anpassen (Least-Squares)
      */
-    private fitCubicBezier(points: Point[], first: number, last: number): CubicBezier {
+    private fitCubicBezier(
+        points: Point[],
+        first: number,
+        last: number
+    ): CubicBezier {
         const p0 = points[first];
         const p3 = points[last];
-
         if (!p0 || !p3) {
-            throw new Error('Invalid segment boundaries');
+            throw new Error('Invalid segment');
         }
 
-        // Einfachere Tangente-Bestimmung
-        const startTangent = this.computeTangent(points, first, true);
-        const endTangent = this.computeTangent(points, last, false);
+        const tHat = this.chordLengthParameterize(points, first, last);
+        const tanStart = this.computeTangent(points, first, true);
+        const tanEnd = this.computeTangent(points, last, false);
 
-        // Einfache Heuristik für Kontrollpunkte
-        const dist = Math.sqrt(
-            Math.pow(p3.x - p0.x, 2) + Math.pow(p3.y - p0.y, 2)
-        ) / 3;
+        let C00 = 0, C01 = 0, C11 = 0;
+        let X0 = 0, X1 = 0;
+
+        for (let i = 1; i < tHat.length - 1; i++) {
+            const t = tHat[i]!;
+            const u = 1 - t;
+
+            const b0 = u * u * u;
+            const b1 = 3 * u * u * t;
+            const b2 = 3 * u * t * t;
+            const b3 = t * t * t;
+
+            const a1 = b1;
+            const a2 = b2;
+
+            C00 += a1 * a1;
+            C01 += a1 * a2;
+            C11 += a2 * a2;
+
+            const px = points[first + i]!.x -
+                (b0 * p0.x + b3 * p3.x);
+            const py = points[first + i]!.y -
+                (b0 * p0.y + b3 * p3.y);
+
+            X0 += a1 * (px * tanStart.x + py * tanStart.y);
+            X1 += a2 * (px * tanEnd.x + py * tanEnd.y);
+        }
+
+        const det = C00 * C11 - C01 * C01;
+        let alpha = 0, beta = 0;
+
+        if (Math.abs(det) > 1e-6) {
+            alpha = (X0 * C11 - X1 * C01) / det;
+            beta = (C00 * X1 - C01 * X0) / det;
+        } else {
+            const dist = Math.hypot(p3.x - p0.x, p3.y - p0.y) / 3;
+            alpha = beta = dist;
+        }
+
+        // Fallback bei degenerierten Lösungen
+        const minDist = 1e-3 * Math.hypot(p3.x - p0.x, p3.y - p0.y);
+        if (alpha < minDist || beta < minDist) {
+            const dist = Math.hypot(p3.x - p0.x, p3.y - p0.y) / 3;
+            alpha = beta = dist;
+        }
 
         return {
-            p0: p0,
+            p0,
             p1: {
-                x: p0.x + startTangent.x * dist,
-                y: p0.y + startTangent.y * dist,
+                x: p0.x + tanStart.x * alpha,
+                y: p0.y + tanStart.y * alpha,
                 t: p0.t,
-                pressure: p0.pressure || 0.5
+                pressure: p0.pressure
             },
             p2: {
-                x: p3.x - endTangent.x * dist,
-                y: p3.y - endTangent.y * dist,
+                x: p3.x + tanEnd.x * beta,
+                y: p3.y + tanEnd.y * beta,
                 t: p3.t,
-                pressure: p3.pressure || 0.5
+                pressure: p3.pressure
             },
-            p3: p3
+            p3
         };
     }
+
+    private chordLengthParameterize(
+        points: Point[],
+        first: number,
+        last: number
+    ): number[] {
+        const u: number[] = [0];
+        let total = 0;
+
+        for (let i = first; i < last; i++) {
+            const p0 = points[i];
+            const p1 = points[i + 1];
+            if (!p0 || !p1) continue;
+
+            const dx = p1.x - p0.x;
+            const dy = p1.y - p0.y;
+            total += Math.sqrt(dx * dx + dy * dy);
+            u.push(total);
+        }
+
+        if (total === 0) {
+            return u.map(() => 0);
+        }
+
+        // Normalisieren auf [0,1]
+        return u.map(v => v / total);
+    }
+
 
     /**
      * Berechnet Tangente an einem Punkt
      */
-    private computeTangent(points: Point[], index: number, isStart: boolean): { x: number; y: number } {
-        if (isStart) {
-            // Tangente am Anfang - Durchschnitt über mehrere Punkte
-            const lookAhead = Math.min(3, points.length - index - 1);
-            let dx = 0, dy = 0;
-            let count = 0;
-            
-            for (let i = 0; i < lookAhead; i++) {
-                const p1 = points[index + i];
-                const p2 = points[index + i + 1];
-                if (p1 && p2) {
-                    dx += p2.x - p1.x;
-                    dy += p2.y - p1.y;
-                    count++;
-                }
-            }
-            
-            if (count === 0) return { x: 1, y: 0 };
-            
-            dx /= count;
-            dy /= count;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            
-            return length > 0 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 };
-        } else {
-            // Tangente am Ende
-            const lookBack = Math.min(3, index);
-            let dx = 0, dy = 0;
-            let count = 0;
-            
-            for (let i = 0; i < lookBack; i++) {
-                const p1 = points[index - i - 1];
-                const p2 = points[index - i];
-                if (p1 && p2) {
-                    dx += p2.x - p1.x;
-                    dy += p2.y - p1.y;
-                    count++;
-                }
-            }
-            
-            if (count === 0) return { x: -1, y: 0 };
-            
-            dx /= count;
-            dy /= count;
-            const length = Math.sqrt(dx * dx + dy * dy);
-            
-            return length > 0 ? { x: dx / length, y: dy / length } : { x: -1, y: 0 };
+    private computeTangent(
+        points: Point[],
+        index: number,
+        isStart: boolean
+    ): { x: number; y: number } {
+
+        const step = isStart ? 1 : -1;
+        const limit = isStart
+            ? Math.min(index + 4, points.length - 1)
+            : Math.max(index - 4, 0);
+
+        let dx = 0, dy = 0, count = 0;
+
+        for (
+            let i = index;
+            isStart ? i < limit : i > limit;
+            i += step
+        ) {
+            const p0 = points[i];
+            const p1 = points[i + step];
+            if (!p0 || !p1) continue;
+
+            dx += p1.x - p0.x;
+            dy += p1.y - p0.y;
+            count++;
         }
+
+        if (count === 0) {
+            return isStart ? { x: 1, y: 0 } : { x: -1, y: 0 };
+        }
+
+        const len = Math.hypot(dx, dy);
+        return len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
     }
 
     /**
@@ -350,25 +407,23 @@ export class BezierCurveFitter {
         last: number,
         bezier: CubicBezier
     ): { maxError: number; splitIndex: number } {
+
+        const tHat = this.chordLengthParameterize(points, first, last);
         let maxError = 0;
-        let splitIndex = Math.floor((first + last) / 2); // Default: Mitte
+        let splitIndex = Math.floor((first + last) / 2);
 
-        for (let i = first + 1; i < last; i++) {
-            const point = points[i];
-            if (!point) continue;
+        for (let i = 1; i < tHat.length - 1; i++) {
+            const t = tHat[i]!;
+            const curvePoint = this.evaluateBezier(bezier, t);
+            const p = points[first + i]!;
 
-            // Einfache Näherung: t als proportionale Distanz
-            const t = (i - first) / (last - first);
-            const bezierPoint = this.evaluateBezier(bezier, t);
+            const dx = p.x - curvePoint.x;
+            const dy = p.y - curvePoint.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
 
-            const error = Math.sqrt(
-                Math.pow(point.x - bezierPoint.x, 2) + 
-                Math.pow(point.y - bezierPoint.y, 2)
-            );
-
-            if (error > maxError) {
-                maxError = error;
-                splitIndex = i;
+            if (dist > maxError) {
+                maxError = dist;
+                splitIndex = first + i;
             }
         }
 
@@ -432,7 +487,7 @@ export class BezierCurveFitter {
             // Prüfe ob die Segmente klein genug sind um zusammengeführt zu werden
             const prevLength = this.segmentLength(prev.points);
             const currLength = this.segmentLength(curr.points);
-            
+
             // Nur kleine Segmente zusammenführen
             if (prevLength < 30 && currLength < 30) {
                 const combinedPoints = [...prev.points, ...curr.points];
