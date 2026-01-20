@@ -118,6 +118,10 @@ export class StyleManager {
         }
     }
 
+    private get useColorForStyling(): boolean {
+        return this.context.toolbarManager?.useColorForStyling || true;
+    }
+
     private resolveCanvasColor(color: string): string {
         if (!color) return '#000000';
 

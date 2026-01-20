@@ -37,6 +37,7 @@ export interface Block {
     strokeIds: string[];
     bbox: BoundingBox;
     order: number;
+    tableLines?: TableLine[]; // Optional, nur für Tabellenblöcke
 }
 
 export interface PageSettings {
@@ -91,3 +92,17 @@ export interface BlockMetadata {
 
 // Helper type for partial updates
 export type PartialBlock = Partial<Block> & { id: string };
+
+export interface TableLine {
+    id: string;
+    type: 'horizontal' | 'vertical';
+    position: number; // x für vertikale Linien, y für horizontale Linien
+    visible: boolean;
+}
+
+export interface PartialTableLine {
+    id?: string;
+    type?: 'horizontal' | 'vertical';
+    position?: number;
+    visible?: boolean;
+}

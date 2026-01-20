@@ -106,6 +106,31 @@ export class ToolbarManager {
 
         this.toolbar.appendChild(this.createSeparator());
 
+        // Tabellen-Linien-Tools (nur für Tabellenblöcke)
+        this.toolbar.appendChild(this.createSeparator());
+        
+        const tableToolsContainer = document.createElement('div');
+        tableToolsContainer.style.display = 'flex';
+        tableToolsContainer.style.gap = '5px';
+        tableToolsContainer.style.alignItems = 'center';
+        
+        const tableToolsLabel = document.createElement('span');
+        tableToolsLabel.textContent = 'Table Lines:';
+        tableToolsLabel.style.fontSize = '12px';
+        tableToolsContainer.appendChild(tableToolsLabel);
+        
+        const addHorizontalBtn = this.createToolbarButton('─', 'Add horizontal line', () => this.addTableLine('horizontal'));
+        const addVerticalBtn = this.createToolbarButton('│', 'Add vertical line', () => this.addTableLine('vertical'));
+        const removeLineBtn = this.createToolbarButton('✕', 'Remove selected line', () => this.removeSelectedTableLine());
+        
+        tableToolsContainer.appendChild(addHorizontalBtn);
+        tableToolsContainer.appendChild(addVerticalBtn);
+        tableToolsContainer.appendChild(removeLineBtn);
+        
+        this.toolbar.appendChild(tableToolsContainer);
+
+        // color toggle for styling
+
         const colorToggleContainer = document.createElement('div');
         colorToggleContainer.style.display = 'flex';
         colorToggleContainer.style.alignItems = 'center';
@@ -288,5 +313,33 @@ export class ToolbarManager {
             block.style.marginTop = `${marginTop}px`;
             block.style.marginBottom = `${marginBottom}px`;
         });
+    }
+
+    private addTableLine(type: 'horizontal' | 'vertical'): void {
+        const currentBlock = this.context.blocks[this.context.currentBlockIndex];
+        if (!currentBlock || currentBlock.type !== 'table') {
+            new Notice('Please select a table block first');
+            return;
+        }
+        
+        this.context.blockManager.addTableLine(currentBlock.id, type);
+        new Notice(`Added ${type} table line`);
+    }
+
+    private removeSelectedTableLine(): void {
+        const selectedLineId = this.context.blockManager.getSelectedLineId();
+        if (!selectedLineId) {
+            new Notice('No table line selected');
+            return;
+        }
+        
+        const currentBlock = this.context.blocks[this.context.currentBlockIndex];
+        if (!currentBlock || currentBlock.type !== 'table') {
+            new Notice('Please select a table block first');
+            return;
+        }
+        
+        this.context.blockManager.removeTableLine(currentBlock.id, selectedLineId);
+        new Notice('Table line removed');
     }
 }

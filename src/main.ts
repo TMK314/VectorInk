@@ -37,7 +37,7 @@ export default class VectorInkPlugin extends Plugin {
 				const view = (leaf as unknown as { view?: unknown })?.view;
 
 				if (view instanceof InkView) {
-					view.digitalizeCurrentDocument();
+					//view.digitalizeCurrentDocument();
 				} else {
 					new Notice('No active ink document found');
 				}

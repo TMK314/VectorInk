@@ -31,7 +31,7 @@ export class InkView extends FileView {
     constructor(leaf: WorkspaceLeaf, plugin: VectorInkPlugin) {
         super(leaf);
         this.plugin = plugin;
-        
+
         // Initialize managers
         this.styleManager = new StyleManager(this);
         this.drawingManager = new DrawingManager(this);
@@ -115,6 +115,40 @@ export class InkView extends FileView {
             switch (e.key) {
                 case 'Escape':
                     this.drawingManager.setTool('selection');
+                    this.blockManager.clearSelectedLine();
+                    break;
+                case 'Delete':
+                case 'Backspace':
+                    // Entferne ausgewählte Tabellenlinie
+                    const selectedLineId = this.blockManager.getSelectedLineId();
+                    if (selectedLineId) {
+                        const currentBlock = this.blocks[this.currentBlockIndex];
+                        if (currentBlock && currentBlock.type === 'table') {
+                            this.blockManager.removeTableLine(currentBlock.id, selectedLineId);
+                            new Notice('Table line removed');
+                            e.preventDefault();
+                        }
+                    }
+                    break;
+                case 'h':
+                case 'H':
+                    if (e.ctrlKey && e.shiftKey) {
+                        const currentBlock = this.blocks[this.currentBlockIndex];
+                        if (currentBlock && currentBlock.type === 'table') {
+                            this.blockManager.addTableLine(currentBlock.id, 'horizontal');
+                            e.preventDefault();
+                        }
+                    }
+                    break;
+                case 'v':
+                case 'V':
+                    if (e.ctrlKey && e.shiftKey) {
+                        const currentBlock = this.blocks[this.currentBlockIndex];
+                        if (currentBlock && currentBlock.type === 'table') {
+                            this.blockManager.addTableLine(currentBlock.id, 'vertical');
+                            e.preventDefault();
+                        }
+                    }
                     break;
                 case 'p':
                 case 'P':

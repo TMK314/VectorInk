@@ -184,3 +184,50 @@
 .ink-blocks-container::-webkit-scrollbar-thumb:hover {
     background: var(--interactive-accent);
 }
+
+
+/* =========================
+   Table Styling
+   ========================= */
+
+.table-lines-overlay {
+    pointer-events: none;
+}
+
+.table-line {
+    pointer-events: auto !important;
+    transition: opacity 0.2s ease, border-color 0.2s ease;
+    z-index: 20;
+}
+
+.table-line:hover {
+    opacity: 1 !important;
+    border-color: var(--interactive-accent) !important;
+}
+
+.table-line.selected {
+    border-color: var(--interactive-accent) !important;
+    border-width: 3px !important;
+    opacity: 1 !important;
+    z-index: 30;
+}
+
+.table-line:hover {
+    opacity: 0.8 !important;
+}
+
+.horizontal-line {
+    border-top: 2px dashed var(--interactive-accent);
+}
+
+.vertical-line {
+    border-left: 2px dashed var(--interactive-accent);
+}
+
+.ink-block[data-selected="true"] .table-line {
+    opacity: 0.8;
+}
+
+.ink-block:not([data-selected="true"]) .table-line {
+    opacity: 0.3;
+}
