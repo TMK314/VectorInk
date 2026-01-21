@@ -37,7 +37,7 @@ export interface Block {
     strokeIds: string[];
     bbox: BoundingBox;
     order: number;
-    tableLines?: TableLine[]; // Optional, nur für Tabellenblöcke
+    tableGrid?: TableGrid; // Optional, nur für Tabellenblöcke
 }
 
 export interface PageSettings {
@@ -93,6 +93,8 @@ export interface BlockMetadata {
 // Helper type for partial updates
 export type PartialBlock = Partial<Block> & { id: string };
 
+
+// Tabellen
 export interface TableLine {
     id: string;
     type: 'horizontal' | 'vertical';
@@ -105,4 +107,25 @@ export interface PartialTableLine {
     type?: 'horizontal' | 'vertical';
     position?: number;
     visible?: boolean;
+}
+
+export interface TableCell {
+    id: string;
+    row: number;
+    col: number;
+    rowSpan: number;
+    colSpan: number;
+}
+
+export interface TableGrid {
+    id: string;
+    rows: number;       // Anzahl der Zeilen
+    cols: number;       // Anzahl der Spalten
+    rowHeights: number[];  // Höhe jeder Zeile in Pixeln
+    colWidths: number[];   // Breite jeder Spalte in Pixeln
+    cells: TableCell[];    // Zellen mit Spans
+    visibleLines: {        // Welche Linien sind sichtbar?
+        horizontal: boolean[];
+        vertical: boolean[];
+    };
 }

@@ -100,56 +100,147 @@ export class InkView extends FileView {
             this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);
             if (this.blocks.length === 0) {
                 this.blockManager.addNewBlock('paragraph', 0, true);
+            } else {
+                // Tabellen initialisieren für geladene Blöcke
+                this.blocks.forEach(block => {
+                    if (block.type === 'table' && !block.tableGrid) {
+                        this.blockManager.initializeTableBlock(block.id, 3, 3);
+                    }
+                });
             }
         }
 
         this.blockManager.renderBlocks();
         this.setupEventListeners();
         this.styleManager.setupThemeObserver();
+        
+        // Tabellen-Tools Sichtbarkeit aktualisieren - mit Timeout um sicherzustellen, dass alles geladen ist
+        setTimeout(() => {
+            this.toolbarManager.updateTableToolsVisibility();
+        }, 100);
     }
 
     private setupEventListeners(): void {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (!this.contentEl.contains(document.activeElement)) return;
 
+            const currentBlock = this.blocks[this.currentBlockIndex];
+            const isTableBlock = currentBlock && currentBlock.type === 'table';
+            const tableToolMode = this.blockManager.getTableToolMode();
+
             switch (e.key) {
                 case 'Escape':
                     this.drawingManager.setTool('selection');
-                    this.blockManager.clearSelectedLine();
+                    // Tabellen-Tool-Modus beenden, falls aktiv
+                    if (tableToolMode) {
+                        this.blockManager.setTableToolMode(null);
+                        new Notice('Table edit mode exited');
+                    }
                     break;
+
                 case 'Delete':
+                case 'ArrowUp':
+            case 'ArrowDown':
+                if (isTableBlock && tableToolMode === 'move-line') {
+                    // Feinjustierung von Linien mit Pfeiltasten
+                    const selectedLine = this.blockManager.getSelectedLine();
+                    if (selectedLine) {
+                        const adjustment = e.key === 'ArrowUp' ? -1 : 1;
+                        if (selectedLine.type === 'horizontal') {
+                            // Bewege horizontale Linie um 1 Pixel
+                                if (currentBlock.tableGrid?.rowHeights[selectedLine.index] === undefined) return;
+                            this.blockManager.moveGridLine(
+                                currentBlock.id, 
+                                'horizontal', 
+                                selectedLine.index, 
+                                currentBlock.tableGrid.rowHeights[selectedLine.index]! + adjustment
+                            );
+                        } else {
+                                if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
+                            // Bewege vertikale Linie um 1 Pixel
+                            this.blockManager.moveGridLine(
+                                currentBlock.id, 
+                                'vertical', 
+                                selectedLine.index, 
+                                currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
+                            );
+                        }
+                        e.preventDefault();
+                    }
+                }
+                break;
+                
+            case 'ArrowLeft':
+            case 'ArrowRight':
+                if (isTableBlock && tableToolMode === 'move-line') {
+                    // Feinjustierung von vertikalen Linien mit Pfeiltasten
+                    const selectedLine = this.blockManager.getSelectedLine();
+                    if (selectedLine && selectedLine.type === 'vertical') {
+                        const adjustment = e.key === 'ArrowLeft' ? -1 : 1;
+                        if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
+                        this.blockManager.moveGridLine(
+                            currentBlock.id, 
+                            'vertical', 
+                            selectedLine.index, 
+                            currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
+                        );
+                        e.preventDefault();
+                    }
+                }
+                break;
                 case 'Backspace':
-                    // Entferne ausgewählte Tabellenlinie
-                    const selectedLineId = this.blockManager.getSelectedLineId();
-                    if (selectedLineId) {
-                        const currentBlock = this.blocks[this.currentBlockIndex];
-                        if (currentBlock && currentBlock.type === 'table') {
-                            this.blockManager.removeTableLine(currentBlock.id, selectedLineId);
-                            new Notice('Table line removed');
+                    // Im Tabellen-Modus: Linien ausblenden statt löschen
+                    if (isTableBlock && tableToolMode === 'move-line') {
+                        // Im neuen Tabellenmodell müssen wir die ausgewählte Linie anders handhaben
+                        // Da wir keine einzelne Linien-ID mehr haben, lassen wir dies vorerst aus
+                        // oder implementieren eine alternative Logik
+                        e.preventDefault();
+                    }
+                    break;
+
+                case 'r':
+                case 'R':
+                    if (e.ctrlKey && e.shiftKey && isTableBlock) {
+                        // Zeile einfügen
+                        if (currentBlock.tableGrid) {
+                            this.blockManager.insertTableRow(currentBlock.id, currentBlock.tableGrid.rows);
+                            new Notice('Row inserted');
                             e.preventDefault();
                         }
                     }
                     break;
-                case 'h':
-                case 'H':
-                    if (e.ctrlKey && e.shiftKey) {
-                        const currentBlock = this.blocks[this.currentBlockIndex];
-                        if (currentBlock && currentBlock.type === 'table') {
-                            this.blockManager.addTableLine(currentBlock.id, 'horizontal');
+
+                case 'c':
+                case 'C':
+                    if (e.ctrlKey && e.shiftKey && isTableBlock) {
+                        // Spalte einfügen
+                        if (currentBlock.tableGrid) {
+                            this.blockManager.insertTableColumn(currentBlock.id, currentBlock.tableGrid.cols);
+                            new Notice('Column inserted');
                             e.preventDefault();
                         }
                     }
                     break;
-                case 'v':
-                case 'V':
-                    if (e.ctrlKey && e.shiftKey) {
-                        const currentBlock = this.blocks[this.currentBlockIndex];
-                        if (currentBlock && currentBlock.type === 'table') {
-                            this.blockManager.addTableLine(currentBlock.id, 'vertical');
-                            e.preventDefault();
+
+                case 'm':
+                case 'M':
+                    if (e.ctrlKey && e.shiftKey && isTableBlock) {
+                        // Tabellen-Modus umschalten
+                        const nextMode = tableToolMode === 'move-line' ? 'merge-cells' :
+                            tableToolMode === 'merge-cells' ? null : 'move-line';
+                        this.blockManager.setTableToolMode(nextMode);
+
+                        if (nextMode === 'move-line') {
+                            new Notice('Table line move mode - click and drag lines to adjust');
+                        } else if (nextMode === 'merge-cells') {
+                            new Notice('Table merge mode - click two cells to merge them');
+                        } else {
+                            new Notice('Table edit mode exited');
                         }
+                        e.preventDefault();
                     }
                     break;
+
                 case 'p':
                 case 'P':
                     if (e.ctrlKey) {
@@ -157,6 +248,7 @@ export class InkView extends FileView {
                         e.preventDefault();
                     }
                     break;
+
                 case 'e':
                 case 'E':
                     if (e.ctrlKey) {
@@ -164,6 +256,7 @@ export class InkView extends FileView {
                         e.preventDefault();
                     }
                     break;
+
                 case 's':
                 case 'S':
                     if (e.ctrlKey) {
@@ -171,6 +264,7 @@ export class InkView extends FileView {
                         e.preventDefault();
                     }
                     break;
+
                 case 'd':
                 case 'D':
                     if (e.ctrlKey) {
@@ -194,6 +288,21 @@ export class InkView extends FileView {
         (this as any)._handleKeyDown = handleKeyDown;
     }
 
+    private toggleTableLineVisibility(blockId: string, selectedLine: { type: 'horizontal' | 'vertical', index: number }): void {
+        const block = this.blocks.find(b => b.id === blockId);
+        if (!block || !block.tableGrid) return;
+
+        const grid = block.tableGrid;
+
+        if (selectedLine.type === 'horizontal' && selectedLine.index < grid.visibleLines.horizontal.length) {
+            grid.visibleLines.horizontal[selectedLine.index] = !grid.visibleLines.horizontal[selectedLine.index];
+        } else if (selectedLine.type === 'vertical' && selectedLine.index < grid.visibleLines.vertical.length) {
+            grid.visibleLines.vertical[selectedLine.index] = !grid.visibleLines.vertical[selectedLine.index];
+        }
+
+        this.blockManager.renderBlocks();
+    }
+
     // WICHTIG: Diese Methode wird von Obsidian aufgerufen, wenn die Datei gewechselt wird
     async onLoadFile(file: TFile): Promise<void> {
         console.log('🔄 Loading file:', file.path);
@@ -214,10 +323,15 @@ export class InkView extends FileView {
         // UI neu aufbauen
         await this.setupUI();
 
-        // Scroll positionieren - mit Type Casting
+        // Scroll positionieren
         if (this.blocksContainer) {
             (this.blocksContainer as HTMLElement).scrollTop = 0;
         }
+
+        // Tabellen-Tools aktualisieren
+        setTimeout(() => {
+            this.toolbarManager.updateTableToolsVisibility();
+        }, 100);
     }
 
     async loadDocument(): Promise<void> {

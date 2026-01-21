@@ -1,4 +1,5 @@
-import { Block, Stroke } from '../types';
+import { table } from 'console';
+import { Block, Stroke, TableCell } from '../types';
 import { InkView } from './InkView';
 import { Notice } from 'obsidian';
 
@@ -125,68 +126,157 @@ export class DigitalizationManager {
     }
 
     private digitalizeTableBlock(block: Block, strokes: Stroke[]): string {
-        if (!block.tableLines || block.tableLines.length === 0) {
+        if (!block.tableGrid) {
             return `| Table with ${strokes.length} stroke${strokes.length !== 1 ? 's' : ''} |`;
         }
 
-        // Sammle horizontale und vertikale Linien
-        const horizontalLines = block.tableLines
-            .filter(line => line.type === 'horizontal' && line.visible)
-            .sort((a, b) => a.position - b.position);
+        const grid = block.tableGrid;
+        const tableContent: string[][] = [];
         
-        const verticalLines = block.tableLines
-            .filter(line => line.type === 'vertical' && line.visible)
-            .sort((a, b) => a.position - b.position);
-
-        // Erstelle Zellengitter basierend auf Linien
-        const rows: number[] = [0, ...horizontalLines.map(l => l.position), block.bbox.height];
-        const cols: number[] = [0, ...verticalLines.map(l => l.position), block.bbox.width];
-
-        // Zähle Strokes pro Zelle (vereinfachte Logik)
-        const cellContents: string[][] = [];
-        
-        for (let i = 0; i < rows.length - 1; i++) {
-            cellContents[i] = [];
-            for (let j = 0; j < cols.length - 1; j++) {
-                // Zähle Strokes in dieser Zelle (vereinfachte Positionprüfung)
-                const strokesInCell = strokes.filter(stroke => {
-                    const firstPoint = stroke.points[0];
-                    if (!firstPoint) return false;
-                    
-                    if (cols[j] === undefined || cols[j + 1] === undefined ||
-                        rows[i] === undefined || rows[i + 1] === undefined) {
-                        return false;
-                    }
-                    return firstPoint.x >= cols[j]! && 
-                           firstPoint.x <= cols[j + 1]! &&
-                           firstPoint.y >= rows[i]! && 
-                           firstPoint.y <= rows[i + 1]!;
-                });
-                
-                if (cellContents[i] === undefined || typeof cellContents[i]![j] === undefined) {
-                    return '';
+        // Initialisiere leere Zellen
+        for (let row = 0; row < grid.rows; row++) {
+            tableContent[row] = [];
+            for (let col = 0; col < grid.cols; col++) {
+                if (tableContent[row] !== undefined) {
+                    tableContent[row]![col] = '';
                 }
-                cellContents[i]![j] = strokesInCell.length > 0 ? 'X' : '';
             }
         }
+
+        // Finde für jeden Stroke die Hauptzelle
+        strokes.forEach(stroke => {
+            if (stroke.points.length === 0) return;
+
+            // Berechne den Schwerpunkt des Strokes
+            const center = this.calculateStrokeCenter(stroke);
+            
+            // Finde die Zelle, die den Schwerpunkt enthält
+            const cell = this.findContainingCell(block, center);
+            if (cell) {
+                // Füge dem Zelleninhalt hinzu (vereinfacht)
+                const row = cell.row;
+                const col = cell.col;
+                if (tableContent[row] === undefined) {
+                    tableContent[row] = [];
+                }
+                if (tableContent[row][col] === '') {
+                    tableContent[row][col] = '✎';
+                } else {
+                    tableContent[row][col] += '✎';
+                }
+            }
+        });
+
+        // Berücksichtige Zellen-Spans
+        grid.cells.forEach(cell => {
+            if (cell.rowSpan > 1 || cell.colSpan > 1) {
+                // Merge-Zelle - Content in die obere linke Zelle verschieben
+                for (let r = cell.row; r < cell.row + cell.rowSpan; r++) {
+                    for (let c = cell.col; c < cell.col + cell.colSpan; c++) {
+                        if (r === cell.row && c === cell.col) continue;
+                        if (tableContent[cell.row] === undefined || tableContent[cell.row] === undefined || tableContent[r] === undefined) continue;
+                        if (tableContent[cell.row]![cell.col] === undefined || tableContent[r]![c] === undefined) continue;
+                        if (tableContent[r] && tableContent[r]![c]) {
+                            tableContent[cell.row]![cell.col]! += tableContent[r]![c];
+                            tableContent[r]![c] = '';
+                        }
+                    }
+                }
+            }
+        });
 
         // Erstelle Markdown-Tabelle
         let markdownTable = '';
         
-        // Header (erste Zeile)
-        markdownTable += '| ' + Array(cols.length - 1).fill('Cell').join(' | ') + ' |\n';
+        // Header
+        markdownTable += '| ' + Array(grid.cols).fill(' ').join(' | ') + ' |\n';
         
         // Trennlinie
-        markdownTable += '|' + Array(cols.length - 1).fill('---').join('|') + '|\n';
+        markdownTable += '|' + Array(grid.cols).fill('---').join('|') + '|\n';
         
         // Datenzeilen
-        for (let i = 0; i < rows.length - 1; i++) {
-            if (cellContents[i] === undefined) {
-                continue;
+        for (let row = 0; row < grid.rows; row++) {
+            const rowContent = [];
+            for (let col = 0; col < grid.cols; col++) {
+                const cell = grid.cells.find(c => c.row === row && c.col === col);
+                if (cell && (cell.rowSpan > 1 || cell.colSpan > 1)) {
+                    // Für Merge-Zellen
+                    if (cell.row === row && cell.col === col) {
+                        if (tableContent[row] === undefined) {
+                            tableContent[row] = [];
+                        }
+                        rowContent.push(tableContent[row]![col] || ' ');
+                    } else {
+                        rowContent.push(''); // Leere Zellen für Merge
+                    }
+                } else {
+                    if (tableContent[row] === undefined) {
+                        tableContent[row] = [];
+                    }
+                    rowContent.push(tableContent[row]![col] || ' ');
+                }
             }
-            markdownTable += '| ' + cellContents[i]!.join(' | ') + ' |\n';
+            markdownTable += '| ' + rowContent.join(' | ') + ' |\n';
         }
 
         return markdownTable.trim();
+    }
+
+    private calculateStrokeCenter(stroke: Stroke): { x: number, y: number } {
+        if (stroke.points.length === 0) return { x: 0, y: 0 };
+        
+        let sumX = 0;
+        let sumY = 0;
+        
+        for (const point of stroke.points) {
+            sumX += point.x;
+            sumY += point.y;
+        }
+        
+        return {
+            x: sumX / stroke.points.length,
+            y: sumY / stroke.points.length
+        };
+    }
+
+    private findContainingCell(block: Block, point: { x: number, y: number }): TableCell | null {
+        if (!block.tableGrid) return null;
+
+        const grid = block.tableGrid;
+        let currentY = 0;
+
+        for (let row = 0; row < grid.rows; row++) {
+            let currentX = 0;
+            const rowHeight = grid.rowHeights[row];
+            
+            for (let col = 0; col < grid.cols; col++) {
+                const colWidth = grid.colWidths[col];
+                
+                if (colWidth === undefined || rowHeight === undefined) {
+                    currentX += colWidth || 0;
+                    continue;
+                }
+
+                // Prüfe, ob Punkt in dieser Basis-Zelle ist
+                if (point.x >= currentX && point.x <= currentX + colWidth &&
+                    point.y >= currentY && point.y <= currentY + rowHeight) {
+                    
+                    // Finde die tatsächliche Zelle (mit Spans)
+                    const cell = grid.cells.find(c => {
+                        return c.row <= row && row < c.row + c.rowSpan &&
+                               c.col <= col && col < c.col + c.colSpan;
+                    });
+                    
+                    return cell || null;
+                }
+                
+                currentX += colWidth;
+            }
+            
+            if (rowHeight === undefined) continue;
+            currentY += rowHeight;
+        }
+
+        return null;
     }
 }
