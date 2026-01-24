@@ -605,13 +605,17 @@ export class DrawingManager {
 
         // Tabellen-Overlay neu zeichnen
         if (block.type === 'table') {
-            const blockEl = canvas.closest('.ink-block');
-            if (blockEl) {
-                setTimeout(() => {
-                    // Verwende die delegierte Methode
+            setTimeout(() => {
+                // Tabellen-Overlay entfernen und neu erstellen
+                const blockEl = this.context.blocksContainer?.querySelector(`.ink-block[data-block-id="${block.id}"]`);
+                if (blockEl) {
+                    const existingOverlay = blockEl.querySelector('.table-grid-overlay');
+                    if (existingOverlay) {
+                        existingOverlay.remove();
+                    }
                     this.context.blockManager.createTableGridOverlay(blockEl as HTMLElement, block);
-                }, 50);
-            }
+                }
+            }, 50);
         }
     }
 

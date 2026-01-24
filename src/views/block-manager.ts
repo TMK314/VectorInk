@@ -26,11 +26,16 @@ export class BlockManager {
             if (block.type === 'table' && block.tableGrid) {
                 setTimeout(() => {
                     // Prüfe ob das Element noch existiert
-                    const currentBlockEl = document.querySelector(`.ink-block[data-block-id="${block.id}"]`);
+                    const currentBlockEl = this.context.blocksContainer?.querySelector(`.ink-block[data-block-id="${block.id}"]`);
                     if (currentBlockEl && document.body.contains(currentBlockEl)) {
-                        this.tableManager.createTableGridOverlay(currentBlockEl as HTMLElement, block);
+                        // Lösche vorhandene Overlays zuerst
+                        const existingOverlay = currentBlockEl.querySelector('.table-grid-overlay');
+                        if (existingOverlay) {
+                            existingOverlay.remove();
+                        }
+                        this.createTableGridOverlay(currentBlockEl as HTMLElement, block);
                     }
-                }, 10);
+                }, 50); // Erhöhte Verzögerung für bessere DOM-Stabilität
             }
         });
 
@@ -39,7 +44,7 @@ export class BlockManager {
             if (this.context.toolbarManager) {
                 this.context.toolbarManager.updateTableToolsVisibility();
             }
-        }, 20);
+        }, 100);
     }
 
     private createBlockElement(block: Block, index: number): HTMLElement {
@@ -561,15 +566,7 @@ export class BlockManager {
         return this.tableManager.getTableToolMode();
     }
 
-    public removeSelectedLine(): void {
-        this.tableManager.removeSelectedLine();
-    }
-
     public getSelectedLine(): { type: 'horizontal' | 'vertical', index: number } | null {
         return this.tableManager.getSelectedLine();
-    }
-
-    public moveGridLine(blockId: string, lineType: 'horizontal' | 'vertical', lineIndex: number, newPosition: number): void {
-        this.tableManager.moveGridLine(blockId, lineType, lineIndex, newPosition);
     }
 }
