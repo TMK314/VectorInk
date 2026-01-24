@@ -124,8 +124,4 @@ export interface TableGrid {
     rowHeights: number[];  // Höhe jeder Zeile in Pixeln
     colWidths: number[];   // Breite jeder Spalte in Pixeln
     cells: TableCell[];    // Zellen mit Spans
-    visibleLines: {        // Welche Linien sind sichtbar?
-        horizontal: boolean[];
-        vertical: boolean[];
-    };
 }

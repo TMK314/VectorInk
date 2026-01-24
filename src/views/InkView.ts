@@ -288,21 +288,6 @@ export class InkView extends FileView {
         (this as any)._handleKeyDown = handleKeyDown;
     }
 
-    private toggleTableLineVisibility(blockId: string, selectedLine: { type: 'horizontal' | 'vertical', index: number }): void {
-        const block = this.blocks.find(b => b.id === blockId);
-        if (!block || !block.tableGrid) return;
-
-        const grid = block.tableGrid;
-
-        if (selectedLine.type === 'horizontal' && selectedLine.index < grid.visibleLines.horizontal.length) {
-            grid.visibleLines.horizontal[selectedLine.index] = !grid.visibleLines.horizontal[selectedLine.index];
-        } else if (selectedLine.type === 'vertical' && selectedLine.index < grid.visibleLines.vertical.length) {
-            grid.visibleLines.vertical[selectedLine.index] = !grid.visibleLines.vertical[selectedLine.index];
-        }
-
-        this.blockManager.renderBlocks();
-    }
-
     // WICHTIG: Diese Methode wird von Obsidian aufgerufen, wenn die Datei gewechselt wird
     async onLoadFile(file: TFile): Promise<void> {
         console.log('🔄 Loading file:', file.path);

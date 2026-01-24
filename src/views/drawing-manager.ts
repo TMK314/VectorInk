@@ -608,6 +608,7 @@ export class DrawingManager {
             const blockEl = canvas.closest('.ink-block');
             if (blockEl) {
                 setTimeout(() => {
+                    // Verwende die delegierte Methode
                     this.context.blockManager.createTableGridOverlay(blockEl as HTMLElement, block);
                 }, 50);
             }
