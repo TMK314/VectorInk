@@ -199,34 +199,43 @@ export class DrawingManager {
 
         // Mouse events
         const handleMouseDown = (e: MouseEvent) => {
-            if (e.button !== 0) return; // Nur linke Maustaste
+    if (e.button !== 0) return; // Nur linke Maustaste
 
-            const point = getPoint(e);
-            if (!point) return;
+    const point = getPoint(e);
+    if (!point) return;
 
-            isMouseDown = true;
+    isMouseDown = true;
 
-            // Prüfe ob wir im Tabellenmodus sind
-            const block = this.context.blocks[blockIndex];
-            const tableMode = this.context.toolbarManager.getCurrentTableMode();
+    // Prüfe ob wir im Tabellenmodus sind
+    const block = this.context.blocks[blockIndex];
+    const tableMode = this.context.toolbarManager.getCurrentTableMode();
 
-            if (!block) return;
-            if (block.type === 'table' && tableMode &&
-                (tableMode === 'vertical-line' || tableMode === 'horizontal-line')) {
-                // Tabellen-Linien-Modus: Linie hinzufügen
-                isTableModeClick = true;
-                this.context.blockManager.handleCanvasClickForTable(block, point.x, point.y);
-                return;
-            }
+    if (!block) return;
+    
+    // Verwende direkt die Canvas-Koordinaten
+    const blockX = point.x;
+    const blockY = point.y;
+    
+    if (block.type === 'table' && tableMode &&
+        (tableMode === 'vertical-line' || tableMode === 'horizontal-line')) {
+        // Tabellen-Linien-Modus: Linie hinzufügen
+        isTableModeClick = true;
+        // Übergebe den Klick an den TableManager
+        const handled = this.context.blockManager.handleCanvasClickForTable(block, blockX, blockY);
+        if (handled) {
+            e.stopPropagation();
+        }
+        return;
+    }
 
-            // Normales Zeichnen/Radieren
-            if (this.currentTool === 'eraser') {
-                startErasing(point);
-            } else if (this.currentTool === 'pen') {
-                startDrawing(point);
-                lastPoint = point;
-            }
-        };
+    // Normales Zeichnen/Radieren
+    if (this.currentTool === 'eraser') {
+        startErasing(point);
+    } else if (this.currentTool === 'pen') {
+        startDrawing(point);
+        lastPoint = point;
+    }
+};
 
         const handleMouseMove = (e: MouseEvent) => {
             const point = getPoint(e);
