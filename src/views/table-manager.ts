@@ -82,8 +82,8 @@ export class TableManager {
     }
 
     private drawGridLines(
-        overlay: HTMLElement, 
-        grid: TableGrid, 
+        overlay: HTMLElement,
+        grid: TableGrid,
         block: Block,
         canvasWidth: number,
         canvasHeight: number
@@ -92,40 +92,34 @@ export class TableManager {
         const widthRatio = canvasWidth / block.bbox.width;
         const heightRatio = canvasHeight / block.bbox.height;
 
-        // Zeichne horizontale Linien (nur innere Linien, keine äußeren)
+        // Zeichne ALLE horizontale Linien (inklusive äußerste)
         let currentY = 0;
-        for (let i = 0; i < grid.rows; i++) {
-            // Nur innere horizontale Linien zeichnen (zwischen den Zeilen)
-            if (i < grid.rows - 1) {
-                // Berechne die positionierte Y-Koordinate für den Canvas
-                const lineY = currentY * heightRatio;
-                
-                // Zeichne durchgehende horizontale Linie
-                const lineEl = this.createGridLine('horizontal', i, lineY, grid, block, canvasWidth);
-                overlay.appendChild(lineEl);
-            }
-            
-            // Aktualisiere currentY für nächste Zeile
-            if (grid.rowHeights[i] !== undefined) {
+        for (let i = 0; i <= grid.rows; i++) {
+            // Berechne die positionierte Y-Koordinate für den Canvas
+            const lineY = currentY * heightRatio;
+
+            // Zeichne horizontale Linie (jetzt alle Linien, auch äußerste)
+            const lineEl = this.createGridLine('horizontal', i, lineY, grid, block, canvasWidth);
+            overlay.appendChild(lineEl);
+
+            // Aktualisiere currentY für nächste Zeile (nicht nach der letzten Linie)
+            if (i < grid.rows && grid.rowHeights[i] !== undefined) {
                 currentY += grid.rowHeights[i]!;
             }
         }
 
-        // Zeichne vertikale Linien (nur innere Linien, keine äußeren)
+        // Zeichne ALLE vertikale Linien (inklusive äußerste)
         let currentX = 0;
-        for (let i = 0; i < grid.cols; i++) {
-            // Nur innere vertikale Linien zeichnen (zwischen den Spalten)
-            if (i < grid.cols - 1) {
-                // Berechne die positionierte X-Koordinate für den Canvas
-                const lineX = currentX * widthRatio;
-                
-                // Zeichne durchgehende vertikale Linie
-                const lineEl = this.createGridLine('vertical', i, lineX, grid, block, canvasWidth);
-                overlay.appendChild(lineEl);
-            }
-            
-            // Aktualisiere currentX für nächste Spalte
-            if (grid.colWidths[i] !== undefined) {
+        for (let i = 0; i <= grid.cols; i++) {
+            // Berechne die positionierte X-Koordinate für den Canvas
+            const lineX = currentX * widthRatio;
+
+            // Zeichne vertikale Linie (jetzt alle Linien, auch äußerste)
+            const lineEl = this.createGridLine('vertical', i, lineX, grid, block, canvasWidth);
+            overlay.appendChild(lineEl);
+
+            // Aktualisiere currentX für nächste Spalte (nicht nach der letzten Linie)
+            if (i < grid.cols && grid.colWidths[i] !== undefined) {
                 currentX += grid.colWidths[i]!;
             }
         }
@@ -188,6 +182,9 @@ export class TableManager {
         // Die Linie zwischen Zeile index-1 und index
         if (type === 'horizontal') {
             // Finde alle Zellen, die diese Linie kreuzen
+            if (index === 0 || index === grid.rows) {
+                return; // Keine Anpassung für äußerste horizontale Linien
+            }
             const relevantCells = grid.cells.filter(cell => {
                 // Linie liegt zwischen Zeilen, also prüfe ob Zelle über diese Linie geht
                 if (index > 0) {
@@ -203,6 +200,9 @@ export class TableManager {
                 lineEl.style.backgroundColor = 'transparent';
             }
         } else {
+            if (index === 0 || index === grid.cols) {
+                return; // Keine Anpassung für äußerste vertikale Linien
+            }
             // Für vertikale Linien
             const relevantCells = grid.cells.filter(cell => {
                 if (index > 0) {
@@ -374,26 +374,26 @@ export class TableManager {
             e.preventDefault();
 
             isDragging = true;
-            
+
             // Holen des Canvas-Elements und dessen Position
             const canvas = lineEl.closest('.ink-block')?.querySelector('canvas') as HTMLCanvasElement;
             if (!canvas) return;
-            
+
             const canvasRect = canvas.getBoundingClientRect();
-            
+
             // Berechne die Mausposition relativ zum Canvas
             if (type === 'horizontal') {
                 // Mausposition relativ zum Canvas
                 const mouseY = e.clientY - canvasRect.top;
                 dragStartPosition = mouseY;
-                
+
                 // Aktuelle Linienposition relativ zum Canvas
                 originalLinePosition = parseFloat(lineEl.style.top);
             } else {
                 // Mausposition relativ zum Canvas
                 const mouseX = e.clientX - canvasRect.left;
                 dragStartPosition = mouseX;
-                
+
                 // Aktuelle Linienposition relativ zum Canvas
                 originalLinePosition = parseFloat(lineEl.style.left);
             }
@@ -408,7 +408,7 @@ export class TableManager {
                 // Holen des Canvas-Elements für jede Bewegung (kann sich ändern)
                 const currentCanvas = lineEl.closest('.ink-block')?.querySelector('canvas') as HTMLCanvasElement;
                 if (!currentCanvas) return;
-                
+
                 const currentCanvasRect = currentCanvas.getBoundingClientRect();
 
                 if (type === 'horizontal') {
@@ -442,7 +442,7 @@ export class TableManager {
                 // Holen des Canvas-Elements
                 const finalCanvas = lineEl.closest('.ink-block')?.querySelector('canvas') as HTMLCanvasElement;
                 if (!finalCanvas) return;
-                
+
                 const finalCanvasRect = finalCanvas.getBoundingClientRect();
                 const blockEl = finalCanvas.closest('.ink-block');
                 if (!blockEl) return;
@@ -452,12 +452,12 @@ export class TableManager {
                     const finalMouseY = upEvent.clientY - finalCanvasRect.top;
                     const delta = finalMouseY - dragStartPosition;
                     const finalCanvasPosition = originalLinePosition + delta;
-                    
+
                     // Umrechnung von Canvas-Position zu Block-Position
                     const canvasHeight = finalCanvasRect.height;
                     const blockHeight = block.bbox.height;
                     const finalBlockPosition = (finalCanvasPosition / canvasHeight) * blockHeight;
-                    
+
                     // Grid-Daten aktualisieren
                     this.updateGridAfterLineMove(block.id, type, index, finalBlockPosition);
                 } else {
@@ -465,12 +465,12 @@ export class TableManager {
                     const finalMouseX = upEvent.clientX - finalCanvasRect.left;
                     const delta = finalMouseX - dragStartPosition;
                     const finalCanvasPosition = originalLinePosition + delta;
-                    
+
                     // Umrechnung von Canvas-Position zu Block-Position
                     const canvasWidth = finalCanvasRect.width;
                     const blockWidth = block.bbox.width;
                     const finalBlockPosition = (finalCanvasPosition / canvasWidth) * blockWidth;
-                    
+
                     // Grid-Daten aktualisieren
                     this.updateGridAfterLineMove(block.id, type, index, finalBlockPosition);
                 }
@@ -499,10 +499,10 @@ export class TableManager {
         lineEl.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
-            
+
             // Linie auswählen für Tastatursteuerung
             this.selectedLine = { type, index };
-            
+
             // Visuelles Feedback
             const allLines = lineEl.closest('.table-grid-overlay')?.querySelectorAll('.grid-line');
             if (allLines) {
@@ -511,7 +511,7 @@ export class TableManager {
                     (l as HTMLElement).style.backgroundColor = 'var(--interactive-accent)';
                 });
             }
-            
+
             lineEl.style.opacity = '0.9';
             lineEl.style.backgroundColor = 'var(--text-accent)';
         });
@@ -523,6 +523,7 @@ export class TableManager {
 
         const grid = block.tableGrid;
 
+        // Erlaube das Löschen ALLER Linien (auch äußerste)
         if (type === 'horizontal') {
             // Entferne die gesamte Zeile
             if (index >= 0 && index < grid.rows) {
@@ -959,7 +960,7 @@ export class TableManager {
 
         if (tableMode === 'vertical-line') {
             let insertIndex: number = grid.cols;
-            
+
             if (isNearLeft) {
                 // Füge Spalte am Anfang ein
                 insertIndex = 0;
@@ -986,10 +987,10 @@ export class TableManager {
             // Füge Spalte an der Position ein
             this.insertTableColumn(block.id, insertIndex);
             return true;
-            
+
         } else if (tableMode === 'horizontal-line') {
             let insertIndex: number = grid.rows;
-            
+
             if (isNearTop) {
                 // Füge Zeile am Anfang ein
                 insertIndex = 0;
