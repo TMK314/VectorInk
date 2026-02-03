@@ -199,43 +199,43 @@ export class DrawingManager {
 
         // Mouse events
         const handleMouseDown = (e: MouseEvent) => {
-    if (e.button !== 0) return; // Nur linke Maustaste
+            if (e.button !== 0) return; // Nur linke Maustaste
 
-    const point = getPoint(e);
-    if (!point) return;
+            const point = getPoint(e);
+            if (!point) return;
 
-    isMouseDown = true;
+            isMouseDown = true;
 
-    // Prüfe ob wir im Tabellenmodus sind
-    const block = this.context.blocks[blockIndex];
-    const tableMode = this.context.toolbarManager.getCurrentTableMode();
+            // Prüfe ob wir im Tabellenmodus sind
+            const block = this.context.blocks[blockIndex];
+            const tableMode = this.context.toolbarManager.getCurrentTableMode();
 
-    if (!block) return;
-    
-    // Verwende direkt die Canvas-Koordinaten
-    const blockX = point.x;
-    const blockY = point.y;
-    
-    if (block.type === 'table' && tableMode &&
-        (tableMode === 'vertical-line' || tableMode === 'horizontal-line')) {
-        // Tabellen-Linien-Modus: Linie hinzufügen
-        isTableModeClick = true;
-        // Übergebe den Klick an den TableManager
-        const handled = this.context.blockManager.handleCanvasClickForTable(block, blockX, blockY);
-        if (handled) {
-            e.stopPropagation();
-        }
-        return;
-    }
+            if (!block) return;
 
-    // Normales Zeichnen/Radieren
-    if (this.currentTool === 'eraser') {
-        startErasing(point);
-    } else if (this.currentTool === 'pen') {
-        startDrawing(point);
-        lastPoint = point;
-    }
-};
+            // Verwende direkt die Canvas-Koordinaten
+            const blockX = point.x;
+            const blockY = point.y;
+
+            if (block.type === 'table' && tableMode &&
+                (tableMode === 'vertical-line' || tableMode === 'horizontal-line')) {
+                // Tabellen-Linien-Modus: Linie hinzufügen
+                isTableModeClick = true;
+                // Übergebe den Klick an den TableManager
+                const handled = this.context.blockManager.handleCanvasClickForTable(block, blockX, blockY);
+                if (handled) {
+                    e.stopPropagation();
+                }
+                return;
+            }
+
+            // Normales Zeichnen/Radieren
+            if (this.currentTool === 'eraser') {
+                startErasing(point);
+            } else if (this.currentTool === 'pen') {
+                startDrawing(point);
+                lastPoint = point;
+            }
+        };
 
         const handleMouseMove = (e: MouseEvent) => {
             const point = getPoint(e);
@@ -519,31 +519,100 @@ export class DrawingManager {
         // Strokes neu zeichnen
         this.drawBlockStrokes(canvas, block);
 
+        // Tabellen-Overlay neu positionieren
+        if (block.type === 'table') {
+            this.adjustTableOverlayForExpansion(canvas, block, dimension, amount);
+        }
+
         console.log(`Block expanded ${dimension}: ${dimension === 'width' ? `${oldWidth}->${block.bbox.width}` : `${oldHeight}->${block.bbox.height}`}`);
     }
 
-    private adjustTableGridForExpansion(block: Block, dimension: 'width' | 'height', amount: number): void {
+    private adjustTableOverlayForExpansion(canvas: HTMLCanvasElement, block: Block, dimension: 'width' | 'height', amount: number): void {
+        if (!block.tableGrid) return;
+
+        const blockEl = canvas.closest('.ink-block') as HTMLElement;
+        if (!blockEl) return;
+
+        // Finde das aktuelle Overlay
+        const overlay = blockEl.querySelector('.table-grid-overlay') as HTMLElement;
+        if (!overlay) return;
+
+        // Holen Sie sich die Canvas-Position
+        const canvasRect = canvas.getBoundingClientRect();
+        const blockRect = blockEl.getBoundingClientRect();
+
+        // Berechne neue Position für das Overlay
+        const canvasLeft = canvasRect.left - blockRect.left;
+        const canvasTop = canvasRect.top - blockRect.top;
+
+        // Setze die neue Position und Größe
+        overlay.style.left = `${canvasLeft}px`;
+        overlay.style.top = `${canvasTop}px`;
+        overlay.style.width = `${canvasRect.width}px`;
+        overlay.style.height = `${canvasRect.height}px`;
+
+        // Passe die Linien innerhalb des Overlays an
+        this.adjustGridLinesInOverlay(overlay, block, dimension, amount);
+    }
+
+    private adjustGridLinesInOverlay(overlay: HTMLElement, block: Block, dimension: 'width' | 'height', amount: number): void {
         if (!block.tableGrid) return;
 
         const grid = block.tableGrid;
-        const numItems = dimension === 'width' ? grid.cols : grid.rows;
-        const incrementPerItem = amount / numItems;
+        const lines = overlay.querySelectorAll('.grid-line') as NodeListOf<HTMLElement>;
 
-        if (dimension === 'width') {
-            for (let i = 0; i < grid.cols; i++) {
-                if (grid.colWidths[i] === undefined) continue;
-                grid.colWidths[i]! += incrementPerItem;
+        lines.forEach(line => {
+            const lineType = line.dataset.lineType as 'horizontal' | 'vertical';
+            const lineIndex = parseInt(line.dataset.lineIndex || '0');
+
+            if (lineType === 'vertical' && dimension === 'width') {
+                // Für vertikale Linien bei Breitenerweiterung
+
+                // Berechne das Verhältnis für die Position
+                const oldPosition = parseFloat(line.style.left);
+
+                // Wenn es die letzte Linie ist, verschiebe sie nach rechts
+                if (lineIndex === grid.cols) {
+                    // Letzte Linie: bleibe am rechten Rand
+                    const canvasRect = overlay.getBoundingClientRect();
+                    line.style.left = `${canvasRect.width - 2}px`;
+                } else {
+                    // Innere Linien: behalte relative Position bei
+                    // Berechne das Verhältnis der alten Position zur alten Breite
+                    const oldWidth = block.bbox.width - amount;
+                    const ratio = oldPosition / oldWidth;
+                    const newPosition = ratio * block.bbox.width;
+                    line.style.left = `${newPosition}px`;
+                }
             }
-        } else {
-            for (let i = 0; i < grid.rows; i++) {
-                if (grid.rowHeights[i] === undefined) continue;
-                grid.rowHeights[i]! += incrementPerItem;
+
+            if (lineType === 'horizontal' && dimension === 'height') {
+                // Für horizontale Linien bei Höhenerweiterung
+
+                // Berechne das Verhältnis für die Position
+                const oldPosition = parseFloat(line.style.top);
+
+                // Wenn es die letzte Linie ist, verschiebe sie nach unten
+                if (lineIndex === grid.rows) {
+                    // Letzte Linie: bleibe am unteren Rand
+                    const canvasRect = overlay.getBoundingClientRect();
+                    line.style.top = `${canvasRect.height - 2}px`;
+                } else {
+                    // Innere Linien: behalte relative Position bei
+                    const oldHeight = block.bbox.height - amount;
+                    const ratio = oldPosition / oldHeight;
+                    const newPosition = ratio * block.bbox.height;
+                    line.style.top = `${newPosition}px`;
+                }
             }
-        }
+        });
     }
 
     public resizeCanvas(canvas: HTMLCanvasElement, block: Block): void {
         const dpr = window.devicePixelRatio || 1;
+        const oldWidth = canvas.width / dpr;
+        const oldHeight = canvas.height / dpr;
+
         canvas.width = block.bbox.width * dpr;
         canvas.height = block.bbox.height * dpr;
 
@@ -563,7 +632,30 @@ export class DrawingManager {
             const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
             const extraHeight = isSelected ? 120 : 80;
             blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
+
+            // Wenn sich die Größe geändert hat, passe Tabellen-Overlay an
+            if ((oldWidth !== block.bbox.width || oldHeight !== block.bbox.height) && block.type === 'table') {
+                setTimeout(() => {
+                    this.adjustTableOverlayForResize(canvas, block);
+                }, 10);
+            }
         }
+    }
+
+    private adjustTableOverlayForResize(canvas: HTMLCanvasElement, block: Block): void {
+        if (!block.tableGrid) return;
+
+        const blockEl = canvas.closest('.ink-block') as HTMLElement;
+        if (!blockEl) return;
+
+        // Entferne vorhandenes Overlay
+        const existingOverlay = blockEl.querySelector('.table-grid-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+
+        // Erstelle neues Overlay
+        this.context.blockManager.createTableGridOverlay(blockEl, block);
     }
 
     public adjustBlockSizeAfterErasing(blockId: string): void {
