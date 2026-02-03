@@ -1,4 +1,4 @@
-import { Block, TableCell, TableGrid } from '../types';
+import { Block, TableCell, TableGrid, Point } from '../types';
 import { InkView } from './InkView';
 import { Notice } from 'obsidian';
 
@@ -727,21 +727,27 @@ export class TableManager {
         const grid = block.tableGrid;
         const MIN_SIZE = 20;
 
+        // Berechne alte kumulative Position für die Linie
+        let cumulative = 0;
         if (lineType === 'horizontal') {
-            // Berechne kumulative Höhe bis zur Linie
-            let cumulativeHeight = 0;
             for (let i = 0; i < lineIndex; i++) {
                 if (grid.rowHeights[i] !== undefined) {
-                    cumulativeHeight += grid.rowHeights[i]!;
+                    cumulative += grid.rowHeights[i]!;
                 }
             }
+        } else {
+            for (let i = 0; i < lineIndex; i++) {
+                if (grid.colWidths[i] !== undefined) {
+                    cumulative += grid.colWidths[i]!;
+                }
+            }
+        }
 
-            // Delta berechnen
-            const delta = newPixelPosition - cumulativeHeight;
+        const delta = newPixelPosition - cumulative;
 
-            // Aktualisiere die Höhen der betroffenen Zeilen
+        // Aktualisiere das Grid (bestehender Code)
+        if (lineType === 'horizontal') {
             if (lineIndex > 0 && lineIndex < grid.rows) {
-                // Innere Linie: teile Höhe zwischen zwei Zeilen auf
                 const prevHeight = grid.rowHeights[lineIndex - 1];
                 const currHeight = grid.rowHeights[lineIndex];
 
@@ -749,7 +755,6 @@ export class TableManager {
                     let newPrevHeight = prevHeight + delta;
                     let newCurrHeight = currHeight - delta;
 
-                    // Mindestgröße sicherstellen
                     if (newPrevHeight < MIN_SIZE) {
                         newCurrHeight += (newPrevHeight - MIN_SIZE);
                         newPrevHeight = MIN_SIZE;
@@ -763,20 +768,18 @@ export class TableManager {
                     grid.rowHeights[lineIndex] = newCurrHeight;
                 }
             } else if (lineIndex === 0) {
-                // Erste Linie: nur die erste Zeilenhöhe anpassen
                 if (grid.rowHeights[0] !== undefined) {
                     const newHeight = grid.rowHeights[0]! + delta;
                     grid.rowHeights[0] = Math.max(MIN_SIZE, newHeight);
                 }
             } else if (lineIndex === grid.rows) {
-                // Letzte Linie: nur die letzte Zeilenhöhe anpassen
                 if (grid.rowHeights[grid.rows - 1] !== undefined) {
                     const newHeight = grid.rowHeights[grid.rows - 1]! + delta;
                     grid.rowHeights[grid.rows - 1] = Math.max(MIN_SIZE, newHeight);
                 }
             }
         } else {
-            // Ähnlich für vertikale Linien
+            // Ähnliche Logik für vertikale Linien
             let cumulativeWidth = 0;
             for (let i = 0; i < lineIndex; i++) {
                 if (grid.colWidths[i] !== undefined) {
@@ -807,17 +810,45 @@ export class TableManager {
                     grid.colWidths[lineIndex] = newCurrWidth;
                 }
             } else if (lineIndex === 0) {
-                // Erste Linie
                 if (grid.colWidths[0] !== undefined) {
                     const newWidth = grid.colWidths[0]! + delta;
                     grid.colWidths[0] = Math.max(MIN_SIZE, newWidth);
                 }
             } else if (lineIndex === grid.cols) {
-                // Letzte Linie
                 if (grid.colWidths[grid.cols - 1] !== undefined) {
                     const newWidth = grid.colWidths[grid.cols - 1]! + delta;
                     grid.colWidths[grid.cols - 1] = Math.max(MIN_SIZE, newWidth);
                 }
+            }
+        }
+
+        // Verschiebe alle Strokes, die sich rechts/unterhalb der Linie befinden
+        const document = this.context.document;
+        if (document && Math.abs(delta) > 0.1) { // Nur verschieben wenn signifikante Änderung
+            for (const strokeId of block.strokeIds) {
+                const stroke = document.getStroke(strokeId);
+                if (!stroke) continue;
+
+                // Erstelle neue Punkte-Array mit verschobenen Positionen
+                const newPoints: Point[] = [];
+                for (const point of stroke.points) {
+                    let newPoint = { ...point };
+
+                    if (lineType === 'horizontal' && point.y >= cumulative) {
+                        // Verschiebe Punkte unterhalb der Linie
+                        newPoint.y += delta;
+                    } else if (lineType === 'vertical' && point.x >= cumulative) {
+                        // Verschiebe Punkte rechts der Linie
+                        newPoint.x += delta;
+                    }
+                    newPoints.push(newPoint);
+                }
+
+                // Aktualisiere die Punkte des Strokes
+                stroke.points = newPoints;
+
+                // Entferne Bezier-Kurven, da sie nicht mehr gültig sind
+                delete stroke.bezierCurves;
             }
         }
 
