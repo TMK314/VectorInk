@@ -11,7 +11,7 @@ export class ToolbarManager {
     public marginBottomInput: HTMLInputElement | null = null;
     public blockMargins: { top: number; bottom: number } = { top: 8, bottom: 8 };
     public useColorForStyling = true;
-    
+
     // Tabellen-Tools
     private tableModeContainer: HTMLElement | null = null;
     private tableToolsContainer: HTMLElement | null = null;
@@ -52,81 +52,173 @@ export class ToolbarManager {
             this.setTableMode(null); // Tabellenmodus verlassen
         }));
 
-        // Pen settings
+        // Stroke manipulation section
         this.toolbar.appendChild(this.createSeparator());
 
-        // Color picker
-        const colorLabel = document.createElement('span');
-        colorLabel.textContent = 'Color:';
-        colorLabel.style.fontSize = '12px';
-        this.toolbar.appendChild(colorLabel);
+        const strokeTools = document.createElement('div');
+        strokeTools.style.display = 'flex';
+        strokeTools.style.gap = '5px';
+        strokeTools.style.alignItems = 'center';
 
-        const colorInput = document.createElement('input');
-        colorInput.type = 'color';
-        colorInput.value = this.context.styleManager.getThemeAdaptiveColor('#000000');
-        colorInput.style.width = '30px';
-        colorInput.style.height = '30px';
-        colorInput.style.cursor = 'pointer';
-        colorInput.style.verticalAlign = 'middle';
-        colorInput.onchange = (e) => {
-            const selectedColor = (e.target as HTMLInputElement).value;
-            this.context.drawingManager.currentPenStyle.color = selectedColor;
-            this.context.styleManager.updateThemeColors();
-        };
-        this.toolbar.appendChild(colorInput);
+        const strokeLabel = document.createElement('span');
+        strokeLabel.textContent = 'Stroke Tools:';
+        strokeLabel.style.fontSize = '12px';
+        strokeTools.appendChild(strokeLabel);
 
-        // Opacity slider
-        const opacityLabel = document.createElement('span');
-        opacityLabel.textContent = 'Opacity:';
-        opacityLabel.style.fontSize = '12px';
-        this.toolbar.appendChild(opacityLabel);
+        // Copy button
+        const copyBtn = this.createToolbarButton('⎘ Copy', 'Copy selected strokes (Ctrl+C)', () => {
+            this.context.strokeSelectionManager.copySelectedStrokes();
+        });
+        strokeTools.appendChild(copyBtn);
 
-        const opacityInput = document.createElement('input');
-        opacityInput.type = 'range';
-        opacityInput.min = '0';
-        opacityInput.max = '100';
-        opacityInput.value = '100';
-        opacityInput.style.width = '60px';
-        opacityInput.style.verticalAlign = 'middle';
-        opacityInput.onchange = (e) => {
-            this.context.drawingManager.currentPenStyle.opacity = parseInt((e.target as HTMLInputElement).value) / 100;
-        };
-        this.toolbar.appendChild(opacityInput);
+        // Paste button
+        const pasteBtn = this.createToolbarButton('⎙ Paste', 'Paste strokes (Ctrl+V)', () => {
+            this.context.strokeSelectionManager.pasteStrokes(this.context.currentBlockIndex);
+        });
+        strokeTools.appendChild(pasteBtn);
 
-        // Width slider
-        const widthLabel = document.createElement('span');
-        widthLabel.textContent = 'Width:';
-        widthLabel.style.fontSize = '12px';
-        this.toolbar.appendChild(widthLabel);
+        // Delete button
+        const deleteBtn = this.createToolbarButton('🗑 Delete', 'Delete selected strokes (Delete)', () => {
+            this.context.strokeSelectionManager.deleteSelectedStrokes();
+        });
+        strokeTools.appendChild(deleteBtn);
 
-        const widthInput = document.createElement('input');
-        widthInput.type = 'range';
-        widthInput.min = '1';
-        widthInput.max = '20';
-        widthInput.value = '2';
-        widthInput.style.width = '60px';
-        widthInput.style.verticalAlign = 'middle';
-        widthInput.onchange = (e) => {
-            this.context.drawingManager.currentPenStyle.width = parseInt((e.target as HTMLInputElement).value);
-        };
-        this.toolbar.appendChild(widthInput);
+        // Anhängen der Stroke-Tools an die Toolbar
+        this.toolbar.appendChild(strokeTools);
 
-        // Formatting (Semantic)
+        // Style tools section
         this.toolbar.appendChild(this.createSeparator());
+
+        const styleTools = document.createElement('div');
+        styleTools.style.display = 'flex';
+        styleTools.style.gap = '5px';
+        styleTools.style.alignItems = 'center';
+        styleTools.style.flexWrap = 'wrap';
+
+        const styleLabel = document.createElement('span');
+        styleLabel.textContent = 'Style:';
+        styleLabel.style.fontSize = '12px';
+        styleTools.appendChild(styleLabel);
+
+        // Color picker for selected strokes
+        const strokeColorLabel = document.createElement('span');
+        strokeColorLabel.textContent = 'Color:';
+        strokeColorLabel.style.fontSize = '12px';
+        styleTools.appendChild(strokeColorLabel);
+
+        const strokeColorInput = document.createElement('input');
+        strokeColorInput.type = 'color';
+        strokeColorInput.value = '#000000';
+        strokeColorInput.style.width = '30px';
+        strokeColorInput.style.height = '30px';
+        strokeColorInput.style.cursor = 'pointer';
+        strokeColorInput.style.verticalAlign = 'middle';
+        strokeColorInput.onchange = (e) => {
+            const color = (e.target as HTMLInputElement).value;
+            if (this.context.strokeSelectionManager.selectedStrokes.size > 0) {
+                this.context.strokeSelectionManager.applyStyleToSelectedStrokes({ color });
+            } else {
+                this.context.drawingManager.currentPenStyle.color = color;
+                this.context.styleManager.updateThemeColors();
+            }
+        };
+        styleTools.appendChild(strokeColorInput);
+
+        // Opacity for selected strokes
+        const strokeOpacityLabel = document.createElement('span');
+        strokeOpacityLabel.textContent = 'Opacity:';
+        strokeOpacityLabel.style.fontSize = '12px';
+        styleTools.appendChild(strokeOpacityLabel);
+
+        const strokeOpacityInput = document.createElement('input');
+        strokeOpacityInput.type = 'range';
+        strokeOpacityInput.min = '0';
+        strokeOpacityInput.max = '100';
+        strokeOpacityInput.value = '100';
+        strokeOpacityInput.style.width = '60px';
+        strokeOpacityInput.style.verticalAlign = 'middle';
+        strokeOpacityInput.onchange = (e) => {
+            const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
+            if (this.context.strokeSelectionManager.selectedStrokes.size > 0) {
+                this.context.strokeSelectionManager.applyStyleToSelectedStrokes({ opacity });
+            } else {
+                this.context.drawingManager.currentPenStyle.opacity = opacity;
+            }
+        };
+        styleTools.appendChild(strokeOpacityInput);
+
+        // Width for selected strokes
+        const strokeWidthLabel = document.createElement('span');
+        strokeWidthLabel.textContent = 'Width:';
+        strokeWidthLabel.style.fontSize = '12px';
+        styleTools.appendChild(strokeWidthLabel);
+
+        const strokeWidthInput = document.createElement('input');
+        strokeWidthInput.type = 'range';
+        strokeWidthInput.min = '1';
+        strokeWidthInput.max = '20';
+        strokeWidthInput.value = '2';
+        strokeWidthInput.style.width = '60px';
+        strokeWidthInput.style.verticalAlign = 'middle';
+        strokeWidthInput.onchange = (e) => {
+            const width = parseInt((e.target as HTMLInputElement).value);
+            if (this.context.strokeSelectionManager.selectedStrokes.size > 0) {
+                this.context.strokeSelectionManager.applyStyleToSelectedStrokes({ width });
+            } else {
+                this.context.drawingManager.currentPenStyle.width = width;
+            }
+        };
+        styleTools.appendChild(strokeWidthInput);
+
+        // Formatting buttons for selected strokes
         const formatContainer = document.createElement('div');
         formatContainer.style.display = 'flex';
         formatContainer.style.gap = '5px';
+        formatContainer.style.alignItems = 'center';
 
-        const normalBtn = this.createFormatButton('Normal', 'normal');
-        const boldBtn = this.createFormatButton('B', 'bold');
-        const italicBtn = this.createFormatButton('I', 'italic');
+        const formatLabel = document.createElement('span');
+        formatLabel.textContent = 'Format:';
+        formatLabel.style.fontSize = '12px';
+        formatContainer.appendChild(formatLabel);
 
+        const normalBtn = this.createFormatButton('Normal', 'normal', () => {
+            if (this.context.strokeSelectionManager.selectedStrokes.size > 0) {
+                this.context.strokeSelectionManager.applyStyleToSelectedStrokes({
+                    semantic: 'normal'
+                });
+            } else {
+                this.context.drawingManager.currentPenStyle.semantic = 'normal';
+            }
+        });
         formatContainer.appendChild(normalBtn);
+
+        const boldBtn = this.createFormatButton('B', 'bold', () => {
+            if (this.context.strokeSelectionManager.selectedStrokes.size > 0) {
+                this.context.strokeSelectionManager.applyStyleToSelectedStrokes({
+                    semantic: 'bold'
+                });
+            } else {
+                this.context.drawingManager.currentPenStyle.semantic = 'bold';
+            }
+        });
         formatContainer.appendChild(boldBtn);
+
+        const italicBtn = this.createFormatButton('I', 'italic', () => {
+            if (this.context.strokeSelectionManager.selectedStrokes.size > 0) {
+                this.context.strokeSelectionManager.applyStyleToSelectedStrokes({
+                    semantic: 'italic'
+                });
+            } else {
+                this.context.drawingManager.currentPenStyle.semantic = 'italic';
+            }
+        });
         formatContainer.appendChild(italicBtn);
+
+        // Anhängen der Style-Tools und Formatierung
+        this.toolbar.appendChild(styleTools);
         this.toolbar.appendChild(formatContainer);
 
-        // Color Toggle
+        // Color Toggle (für Block-Farbstyling)
         this.toolbar.appendChild(this.createSeparator());
 
         const colorToggleContainer = document.createElement('div');
@@ -154,6 +246,13 @@ export class ToolbarManager {
         this.toolbar.appendChild(colorToggleContainer);
 
         // Width multiplier
+        this.toolbar.appendChild(this.createSeparator());
+
+        const multiplierLabel = document.createElement('span');
+        multiplierLabel.textContent = 'Zoom:';
+        multiplierLabel.style.fontSize = '12px';
+        this.toolbar.appendChild(multiplierLabel);
+
         const widthMultiplierInput = document.createElement('input');
         widthMultiplierInput.type = 'range';
         widthMultiplierInput.min = '0.5';
@@ -188,6 +287,7 @@ export class ToolbarManager {
         this.toolbar.appendChild(this.createSeparator());
         const epsilonLabel = document.createElement('span');
         epsilonLabel.textContent = 'Epsilon:';
+        epsilonLabel.style.fontSize = '12px';
         this.toolbar.appendChild(epsilonLabel);
 
         this.epsilonInput = document.createElement('input');
@@ -206,6 +306,7 @@ export class ToolbarManager {
         this.toolbar.appendChild(this.createSeparator());
         const marginLabel = document.createElement('span');
         marginLabel.textContent = 'Margins:';
+        marginLabel.style.fontSize = '12px';
         this.toolbar.appendChild(marginLabel);
 
         const marginContainer = document.createElement('div');
@@ -250,33 +351,33 @@ export class ToolbarManager {
 
         // Tabellen-Tools Section
         this.toolbar.appendChild(this.createSeparator());
-        
+
         this.tableToolsContainer = document.createElement('div');
         this.tableToolsContainer.style.display = 'flex';
         this.tableToolsContainer.style.gap = '5px';
         this.tableToolsContainer.style.alignItems = 'center';
         this.tableToolsContainer.style.display = 'none'; // Initially hidden
-        
+
         const tableToolsLabel = document.createElement('span');
         tableToolsLabel.textContent = 'Table Tools:';
         tableToolsLabel.style.fontSize = '12px';
         this.tableToolsContainer.appendChild(tableToolsLabel);
-        
+
         // Tabellen-Tools Buttons
-        const verticalLineBtn = this.createTableToolButton('│ Add Vert', 'Add vertical line', () => 
+        const verticalLineBtn = this.createTableToolButton('│ Add Vert', 'Add vertical line', () =>
             this.setTableMode('vertical-line'));
-        const horizontalLineBtn = this.createTableToolButton('─ Add Horiz', 'Add horizontal line', () => 
+        const horizontalLineBtn = this.createTableToolButton('─ Add Horiz', 'Add horizontal line', () =>
             this.setTableMode('horizontal-line'));
-        const mergeCellsBtn = this.createTableToolButton('⬌ Merge', 'Merge cells', () => 
+        const mergeCellsBtn = this.createTableToolButton('⬌ Merge', 'Merge cells', () =>
             this.setTableMode('merge-cells'));
-        const exitTableModeBtn = this.createTableToolButton('✕ Exit', 'Exit table mode', () => 
+        const exitTableModeBtn = this.createTableToolButton('✕ Exit', 'Exit table mode', () =>
             this.setTableMode(null));
-        
+
         this.tableToolsContainer.appendChild(verticalLineBtn);
         this.tableToolsContainer.appendChild(horizontalLineBtn);
         this.tableToolsContainer.appendChild(mergeCellsBtn);
         this.tableToolsContainer.appendChild(exitTableModeBtn);
-        
+
         // Table mode indicator
         this.tableModeIndicator = document.createElement('div');
         this.tableModeIndicator.style.display = 'none';
@@ -287,7 +388,7 @@ export class ToolbarManager {
         this.tableModeIndicator.style.borderRadius = '3px';
         this.tableModeIndicator.style.marginLeft = '10px';
         this.tableToolsContainer.appendChild(this.tableModeIndicator);
-        
+
         this.toolbar.appendChild(this.tableToolsContainer);
 
         // Digitalize button
@@ -296,10 +397,40 @@ export class ToolbarManager {
         this.toolbar.appendChild(digitalizeBtn);
 
         // Add block button
+        this.toolbar.appendChild(this.createSeparator());
         const addBlockBtn = this.createToolbarButton('＋', 'Add Block', () => this.context.blockManager.addNewBlock('paragraph', this.context.blocks.length));
         this.toolbar.appendChild(addBlockBtn);
 
         container.appendChild(this.toolbar);
+    }
+
+    private createFormatButton(text: string, semantic: string, onClick: () => void): HTMLElement {
+        const button = document.createElement('button');
+        button.textContent = text;
+        button.style.padding = '4px 8px';
+        button.style.fontSize = '11px';
+        button.style.border = '1px solid var(--background-modifier-border)';
+        button.style.borderRadius = '4px';
+        button.style.background = 'var(--interactive-normal)';
+        button.style.cursor = 'pointer';
+        button.style.color = 'var(--text-muted)';
+        button.style.fontWeight = semantic === 'bold' ? 'bold' : 'normal';
+        button.style.fontStyle = semantic === 'italic' ? 'italic' : 'normal';
+        button.onclick = (e) => {
+            e.stopPropagation();
+            onClick();
+        };
+
+        button.onmouseenter = () => {
+            button.style.background = 'var(--interactive-hover)';
+            button.style.color = 'var(--text-normal)';
+        };
+        button.onmouseleave = () => {
+            button.style.background = 'var(--interactive-normal)';
+            button.style.color = 'var(--text-muted)';
+        };
+
+        return button;
     }
 
     private createTableToolButton(text: string, title: string, onClick: () => void): HTMLElement {
@@ -317,7 +448,7 @@ export class ToolbarManager {
             e.stopPropagation();
             onClick();
         };
-        
+
         button.onmouseenter = () => {
             button.style.background = 'var(--interactive-hover)';
             button.style.color = 'var(--text-normal)';
@@ -328,7 +459,7 @@ export class ToolbarManager {
                 button.style.color = 'var(--text-muted)';
             }
         };
-        
+
         return button;
     }
 
@@ -349,7 +480,7 @@ export class ToolbarManager {
         }
 
         this.currentTableMode = mode;
-        
+
         // Aktualisiere Button-Styles
         if (this.tableToolsContainer) {
             const buttons = this.tableToolsContainer.querySelectorAll('button');
@@ -366,7 +497,7 @@ export class ToolbarManager {
                 }
             });
         }
-        
+
         // Aktualisiere Indicator
         if (this.tableModeIndicator) {
             if (mode) {
@@ -382,7 +513,7 @@ export class ToolbarManager {
                 this.tableModeIndicator.style.display = 'none';
             }
         }
-        
+
         // Benachrichtigung
         if (mode === 'vertical-line') {
             new Notice('Vertical line mode: Click to add lines, drag to move, select and press Delete to remove');
@@ -393,7 +524,7 @@ export class ToolbarManager {
         } else {
             new Notice('Exited table edit mode');
         }
-        
+
         // Render blocks neu für visuelles Feedback
         this.context.blockManager.renderBlocks();
     }
@@ -405,11 +536,11 @@ export class ToolbarManager {
     public updateTableToolsVisibility(): void {
         const currentBlock = this.context.blocks[this.context.currentBlockIndex];
         const isTableBlock = currentBlock && currentBlock.type === 'table';
-        
+
         if (this.tableToolsContainer) {
             this.tableToolsContainer.style.display = isTableBlock ? 'flex' : 'none';
         }
-        
+
         // Wenn kein Tabellenblock mehr ausgewählt ist, Tabellenmodus verlassen
         if (!isTableBlock && this.currentTableMode) {
             this.setTableMode(null);
@@ -429,23 +560,7 @@ export class ToolbarManager {
         return button;
     }
 
-    private createFormatButton(text: string, semantic: string): HTMLElement {
-        const button = document.createElement('button');
-        button.textContent = text;
-        button.style.padding = '5px 10px';
-        button.style.border = '1px solid var(--background-modifier-border)';
-        button.style.borderRadius = '4px';
-        button.style.fontWeight = semantic === 'bold' ? 'bold' : 'normal';
-        button.style.fontStyle = semantic === 'italic' ? 'italic' : 'normal';
-        button.onclick = () => {
-            this.context.drawingManager.currentPenStyle.semantic = semantic as any;
-            button.parentElement?.querySelectorAll('button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            button.classList.add('active');
-        };
-        return button;
-    }
+
 
     private createSeparator(): HTMLElement {
         const separator = document.createElement('div');

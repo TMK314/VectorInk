@@ -9,6 +9,7 @@ import { DrawingManager } from './drawing-manager';
 import { ToolbarManager } from './toolbar-manager';
 import { DigitalizationManager } from './digitalization-manager';
 import { StyleManager } from './style-manager';
+import { StrokeSelectionManager } from './stroke-selection-manager';
 
 export const INK_VIEW_TYPE = 'ink-view';
 
@@ -28,12 +29,15 @@ export class InkView extends FileView {
     public currentBlockIndex = 0;
     public blocksContainer: HTMLElement | null = null;
 
+    public strokeSelectionManager: StrokeSelectionManager;
+
     constructor(leaf: WorkspaceLeaf, plugin: VectorInkPlugin) {
         super(leaf);
         this.plugin = plugin;
 
         // Initialize managers
         this.styleManager = new StyleManager(this);
+        this.strokeSelectionManager = new StrokeSelectionManager(this);
         this.drawingManager = new DrawingManager(this);
         this.blockManager = new BlockManager(this);
         this.digitalizationManager = new DigitalizationManager(this);
@@ -113,7 +117,7 @@ export class InkView extends FileView {
         this.blockManager.renderBlocks();
         this.setupEventListeners();
         this.styleManager.setupThemeObserver();
-        
+
         // Tabellen-Tools Sichtbarkeit aktualisieren - mit Timeout um sicherzustellen, dass alles geladen ist
         setTimeout(() => {
             this.toolbarManager.updateTableToolsVisibility();
@@ -128,6 +132,59 @@ export class InkView extends FileView {
             const isTableBlock = currentBlock && currentBlock.type === 'table';
             const tableToolMode = this.blockManager.getTableToolMode();
 
+            // Handle stroke manipulation shortcuts
+            if (this.drawingManager.currentTool === 'selection') {
+                switch (e.key) {
+                    case 'Delete':
+                        this.strokeSelectionManager.deleteSelectedStrokes();
+                        e.preventDefault();
+                        return;
+
+                    case 'c':
+                    case 'C':
+                        if (e.ctrlKey) {
+                            this.strokeSelectionManager.copySelectedStrokes();
+                            e.preventDefault();
+                            return;
+                        }
+                        break;
+
+                    case 'v':
+                    case 'V':
+                        if (e.ctrlKey) {
+                            this.strokeSelectionManager.pasteStrokes(this.currentBlockIndex);
+                            e.preventDefault();
+                            return;
+                        }
+                        break;
+
+                    case 'a':
+                    case 'A':
+                        if (e.ctrlKey) {
+                            // Select all strokes in current block
+                            const block = this.blocks[this.currentBlockIndex];
+                            if (block) {
+                                this.strokeSelectionManager.selectedStrokes.clear();
+                                block.strokeIds.forEach(id => {
+                                    this.strokeSelectionManager.selectedStrokes.add(id);
+                                });
+                                this.blockManager.renderBlocks();
+                                new Notice(`Selected ${block.strokeIds.length} stroke(s)`);
+                            }
+                            e.preventDefault();
+                            return;
+                        }
+                        break;
+
+                    case 'Escape':
+                        this.strokeSelectionManager.clearSelection();
+                        this.blockManager.renderBlocks();
+                        e.preventDefault();
+                        return;
+                }
+            }
+
+            // Handle table and other shortcuts
             switch (e.key) {
                 case 'Escape':
                     this.drawingManager.setTool('selection');
@@ -138,62 +195,59 @@ export class InkView extends FileView {
                     }
                     break;
 
-                case 'Delete':
                 case 'ArrowUp':
-            case 'ArrowDown':
-                if (isTableBlock && tableToolMode === 'move-line') {
-                    // Feinjustierung von Linien mit Pfeiltasten
-                    const selectedLine = this.blockManager.getSelectedLine();
-                    if (selectedLine) {
-                        const adjustment = e.key === 'ArrowUp' ? -1 : 1;
-                        if (selectedLine.type === 'horizontal') {
-                            // Bewege horizontale Linie um 1 Pixel
+                case 'ArrowDown':
+                    if (isTableBlock && tableToolMode === 'move-line') {
+                        // Feinjustierung von Linien mit Pfeiltasten
+                        const selectedLine = this.blockManager.getSelectedLine();
+                        if (selectedLine) {
+                            const adjustment = e.key === 'ArrowUp' ? -1 : 1;
+                            if (selectedLine.type === 'horizontal') {
+                                // Bewege horizontale Linie um 1 Pixel
                                 if (currentBlock.tableGrid?.rowHeights[selectedLine.index] === undefined) return;
-                            this.blockManager.moveGridLine(
-                                currentBlock.id, 
-                                'horizontal', 
-                                selectedLine.index, 
-                                currentBlock.tableGrid.rowHeights[selectedLine.index]! + adjustment
-                            );
-                        } else {
+                                this.blockManager.moveGridLine(
+                                    currentBlock.id,
+                                    'horizontal',
+                                    selectedLine.index,
+                                    currentBlock.tableGrid.rowHeights[selectedLine.index]! + adjustment
+                                );
+                            } else {
                                 if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
-                            // Bewege vertikale Linie um 1 Pixel
+                                // Bewege vertikale Linie um 1 Pixel
+                                this.blockManager.moveGridLine(
+                                    currentBlock.id,
+                                    'vertical',
+                                    selectedLine.index,
+                                    currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
+                                );
+                            }
+                            e.preventDefault();
+                        }
+                    }
+                    break;
+
+                case 'ArrowLeft':
+                case 'ArrowRight':
+                    if (isTableBlock && tableToolMode === 'move-line') {
+                        // Feinjustierung von vertikalen Linien mit Pfeiltasten
+                        const selectedLine = this.blockManager.getSelectedLine();
+                        if (selectedLine && selectedLine.type === 'vertical') {
+                            const adjustment = e.key === 'ArrowLeft' ? -1 : 1;
+                            if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
                             this.blockManager.moveGridLine(
-                                currentBlock.id, 
-                                'vertical', 
-                                selectedLine.index, 
+                                currentBlock.id,
+                                'vertical',
+                                selectedLine.index,
                                 currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
                             );
+                            e.preventDefault();
                         }
-                        e.preventDefault();
                     }
-                }
-                break;
-                
-            case 'ArrowLeft':
-            case 'ArrowRight':
-                if (isTableBlock && tableToolMode === 'move-line') {
-                    // Feinjustierung von vertikalen Linien mit Pfeiltasten
-                    const selectedLine = this.blockManager.getSelectedLine();
-                    if (selectedLine && selectedLine.type === 'vertical') {
-                        const adjustment = e.key === 'ArrowLeft' ? -1 : 1;
-                        if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
-                        this.blockManager.moveGridLine(
-                            currentBlock.id, 
-                            'vertical', 
-                            selectedLine.index, 
-                            currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
-                        );
-                        e.preventDefault();
-                    }
-                }
-                break;
+                    break;
+
                 case 'Backspace':
                     // Im Tabellen-Modus: Linien ausblenden statt löschen
                     if (isTableBlock && tableToolMode === 'move-line') {
-                        // Im neuen Tabellenmodell müssen wir die ausgewählte Linie anders handhaben
-                        // Da wir keine einzelne Linien-ID mehr haben, lassen wir dies vorerst aus
-                        // oder implementieren eine alternative Logik
                         e.preventDefault();
                     }
                     break;

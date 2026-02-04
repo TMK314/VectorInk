@@ -39,6 +39,14 @@ export class DrawingManager {
         let isMouseDown = false;
         let isTableModeClick = false;
 
+        // Stroke selection variables
+        let isSelectingRect = false;
+        let selectionRectStart: Point | null = null;
+        let selectionBox: HTMLElement | null = null;
+        let isDraggingSelection = false;
+        let dragStartPoint: Point | null = null;
+        let originalStrokePositions = new Map<string, Point[]>();
+
         const getPoint = (e: MouseEvent | TouchEvent): Point | null => {
             const rect = canvas.getBoundingClientRect();
             let x, y;
@@ -197,6 +205,263 @@ export class DrawingManager {
             }
         };
 
+        // Stroke selection functions
+        const getStrokeAtPoint = (point: Point): string | null => {
+            const block = this.context.blocks[blockIndex];
+            if (!block || !this.context.document) return null;
+
+            const tolerance = 10;
+
+            for (const strokeId of block.strokeIds) {
+                const stroke = this.context.document.strokes.find(s => s.id === strokeId);
+                if (!stroke) continue;
+
+                for (const p of stroke.points) {
+                    const distance = Math.sqrt(
+                        Math.pow(p.x - point.x, 2) + Math.pow(p.y - point.y, 2)
+                    );
+                    if (distance <= tolerance) {
+                        return strokeId;
+                    }
+                }
+
+                for (let i = 0; i < stroke.points.length - 1; i++) {
+                    const p1 = stroke.points[i];
+                    const p2 = stroke.points[i + 1];
+                    if (!p1 || !p2) continue;
+
+                    const distance = this.distanceToLineSegment(point, p1, p2);
+                    if (distance <= tolerance) {
+                        return strokeId;
+                    }
+                }
+            }
+
+            return null;
+        };
+
+        const startSelection = (point: Point, e: MouseEvent) => {
+            const strokeId = getStrokeAtPoint(point);
+
+            if (strokeId) {
+                // Clicked on a stroke
+                if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                    // Add to selection with modifier key
+                    this.context.strokeSelectionManager.toggleStrokeSelection(strokeId);
+                } else {
+                    if (this.context.strokeSelectionManager.selectedStrokes.has(strokeId)) {
+                        // Start dragging selected strokes
+                        startDraggingSelection(point);
+                    } else {
+                        // Select single stroke
+                        this.context.strokeSelectionManager.selectedStrokes.clear();
+                        this.context.strokeSelectionManager.selectedStrokes.add(strokeId);
+                    }
+                }
+            } else {
+                // Start rectangle selection
+                isSelectingRect = true;
+                selectionRectStart = point;
+
+                // Create selection rectangle element
+                selectionBox = document.createElement('div');
+                selectionBox.className = 'stroke-selection-box';
+                selectionBox.style.position = 'absolute';
+                selectionBox.style.border = '2px dashed var(--interactive-accent)';
+                selectionBox.style.background = 'rgba(var(--interactive-accent-rgb), 0.1)';
+                selectionBox.style.pointerEvents = 'none';
+                selectionBox.style.zIndex = '1000';
+
+                const canvasRect = canvas.getBoundingClientRect();
+                selectionBox.style.left = `${canvasRect.left}px`;
+                selectionBox.style.top = `${canvasRect.top}px`;
+                selectionBox.style.width = '0';
+                selectionBox.style.height = '0';
+
+                document.body.appendChild(selectionBox);
+            }
+
+            redrawCanvasWithSelection();
+        };
+
+        const updateSelectionRect = (point: Point) => {
+            if (!isSelectingRect || !selectionRectStart || !selectionBox) return;
+
+            const x = Math.min(selectionRectStart.x, point.x);
+            const y = Math.min(selectionRectStart.y, point.y);
+            const width = Math.abs(point.x - selectionRectStart.x);
+            const height = Math.abs(point.y - selectionRectStart.y);
+
+            const canvasRect = canvas.getBoundingClientRect();
+            const scaleX = canvasRect.width / canvas.width;
+            const scaleY = canvasRect.height / canvas.height;
+
+            selectionBox.style.left = `${canvasRect.left + x * scaleX}px`;
+            selectionBox.style.top = `${canvasRect.top + y * scaleY}px`;
+            selectionBox.style.width = `${width * scaleX}px`;
+            selectionBox.style.height = `${height * scaleY}px`;
+        };
+
+        const endSelectionRect = (endPoint: Point, addToSelection: boolean) => {
+            if (!isSelectingRect || !selectionRectStart) return;
+
+            const block = this.context.blocks[blockIndex];
+            if (!block || !this.context.document) return;
+
+            const x1 = Math.min(selectionRectStart.x, endPoint.x);
+            const y1 = Math.min(selectionRectStart.y, endPoint.y);
+            const x2 = Math.max(selectionRectStart.x, endPoint.x);
+            const y2 = Math.max(selectionRectStart.y, endPoint.y);
+
+            if (!addToSelection) {
+                this.context.strokeSelectionManager.selectedStrokes.clear();
+            }
+
+            for (const strokeId of block.strokeIds) {
+                const stroke = this.context.document.strokes.find(s => s.id === strokeId);
+                if (!stroke) continue;
+
+                for (const point of stroke.points) {
+                    if (point.x >= x1 && point.x <= x2 && point.y >= y1 && point.y <= y2) {
+                        this.context.strokeSelectionManager.selectedStrokes.add(strokeId);
+                        break;
+                    }
+                }
+            }
+
+            // Clean up
+            if (selectionBox) {
+                selectionBox.remove();
+                selectionBox = null;
+            }
+            isSelectingRect = false;
+            selectionRectStart = null;
+
+            redrawCanvasWithSelection();
+        };
+
+        const startDraggingSelection = (point: Point) => {
+            const block = this.context.blocks[blockIndex];
+            if (!block || !this.context.document) return;
+
+            isDraggingSelection = true;
+            dragStartPoint = point;
+            originalStrokePositions.clear();
+
+            // Store original positions for all selected strokes
+            this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
+                const stroke = this.context.document?.getStroke(strokeId);
+                if (stroke) {
+                    originalStrokePositions.set(strokeId, [...stroke.points]);
+                }
+            });
+        };
+
+        const updateDraggingSelection = (point: Point) => {
+            if (!isDraggingSelection || !dragStartPoint || !this.context.document) return;
+
+            const dx = point.x - dragStartPoint.x;
+            const dy = point.y - dragStartPoint.y;
+
+            this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
+                const originalPoints = originalStrokePositions.get(strokeId);
+                if (!originalPoints) return;
+
+                const stroke = this.context.document?.getStroke(strokeId);
+                if (!stroke) return;
+
+                // Update stroke points
+                stroke.points = originalPoints.map(p => ({
+                    ...p,
+                    x: p.x + dx,
+                    y: p.y + dy
+                }));
+
+                // Update bezier curves if they exist
+                if (stroke.bezierCurves) {
+                    stroke.bezierCurves = stroke.bezierCurves.map(curve => ({
+                        ...curve,
+                        p0: { ...curve.p0, x: curve.p0.x + dx, y: curve.p0.y + dy },
+                        p1: { ...curve.p1, x: curve.p1.x + dx, y: curve.p1.y + dy },
+                        p2: { ...curve.p2, x: curve.p2.x + dx, y: curve.p2.y + dy },
+                        p3: { ...curve.p3, x: curve.p3.x + dx, y: curve.p3.y + dy }
+                    }));
+                }
+            });
+
+            redrawCanvasWithSelection();
+        };
+
+        const endDraggingSelection = () => {
+            if (!isDraggingSelection || !this.context.document) return;
+
+            // Update document with new positions
+            this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
+                const stroke = this.context.document?.getStroke(strokeId);
+                if (stroke) {
+                    if (this.context.document)
+                        this.context.document.updateStroke(strokeId, {
+                            points: stroke.points,
+                            bezierCurves: stroke.bezierCurves
+                        });
+                }
+            });
+
+            isDraggingSelection = false;
+            dragStartPoint = null;
+            originalStrokePositions.clear();
+
+            // Update block bounding box
+            const block = this.context.blocks[blockIndex];
+            if (block) {
+                this.adjustBlockSize(block.id);
+            }
+        };
+
+        const redrawCanvasWithSelection = () => {
+            const block = this.context.blocks[blockIndex];
+            if (block) {
+                this.drawBlockStrokes(canvas, block);
+                drawSelectionHighlights(canvas, block);
+            }
+        };
+
+        const drawSelectionHighlights = (canvas: HTMLCanvasElement, block: Block) => {
+            if (!this.context.document || this.context.strokeSelectionManager.selectedStrokes.size === 0) return;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            ctx.strokeStyle = 'var(--interactive-accent)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+
+            this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
+                const stroke = this.context.document?.getStroke(strokeId);
+                if (!stroke || !block.strokeIds.includes(strokeId)) return;
+
+                if (stroke.points.length > 0) {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+                    for (const point of stroke.points) {
+                        minX = Math.min(minX, point.x);
+                        minY = Math.min(minY, point.y);
+                        maxX = Math.max(maxX, point.x);
+                        maxY = Math.max(maxY, point.y);
+                    }
+
+                    const padding = 5;
+                    ctx.strokeRect(
+                        minX - padding, minY - padding,
+                        maxX - minX + 2 * padding,
+                        maxY - minY + 2 * padding
+                    );
+                }
+            });
+
+            ctx.setLineDash([]);
+        };
+
         // Mouse events
         const handleMouseDown = (e: MouseEvent) => {
             if (e.button !== 0) return; // Nur linke Maustaste
@@ -228,8 +493,10 @@ export class DrawingManager {
                 return;
             }
 
-            // Normales Zeichnen/Radieren
-            if (this.currentTool === 'eraser') {
+            // Je nach Tool unterschiedlich handeln
+            if (this.currentTool === 'selection') {
+                startSelection(point, e);
+            } else if (this.currentTool === 'eraser') {
                 startErasing(point);
             } else if (this.currentTool === 'pen') {
                 startDrawing(point);
@@ -244,7 +511,13 @@ export class DrawingManager {
             // Wenn wir im Tabellenmodus klicken, zeichnen wir nicht
             if (isTableModeClick) return;
 
-            if (this.currentTool === 'eraser' && this.isErasing) {
+            if (this.currentTool === 'selection') {
+                if (isSelectingRect) {
+                    updateSelectionRect(point);
+                } else if (isDraggingSelection) {
+                    updateDraggingSelection(point);
+                }
+            } else if (this.currentTool === 'eraser' && this.isErasing) {
                 erase(point);
             } else if (this.currentTool === 'pen' && this.isDrawing) {
                 if (!lastPoint) {
@@ -260,7 +533,8 @@ export class DrawingManager {
             }
         };
 
-        const handleMouseUp = () => {
+        const handleMouseUp = (e: MouseEvent) => {
+            const point = getPoint(e);
             isMouseDown = false;
 
             if (isTableModeClick) {
@@ -268,7 +542,13 @@ export class DrawingManager {
                 return;
             }
 
-            if (this.currentTool === 'pen') {
+            if (this.currentTool === 'selection') {
+                if (isSelectingRect && point) {
+                    endSelectionRect(point, e.shiftKey || e.ctrlKey || e.metaKey);
+                } else if (isDraggingSelection) {
+                    endDraggingSelection();
+                }
+            } else if (this.currentTool === 'pen') {
                 stopDrawing();
             } else if (this.currentTool === 'eraser') {
                 stopErasing();
@@ -279,7 +559,7 @@ export class DrawingManager {
 
         const handleMouseLeave = () => {
             if (isMouseDown) {
-                handleMouseUp();
+                handleMouseUp(new MouseEvent('mouseup'));
             }
         };
 
@@ -298,6 +578,9 @@ export class DrawingManager {
                 } else if (this.currentTool === 'pen') {
                     startDrawing(point);
                     lastPoint = point;
+                } else if (this.currentTool === 'selection') {
+                    // For touch, treat as click selection
+                    startSelection(point, new MouseEvent('mousedown'));
                 }
             }
         };
@@ -316,13 +599,29 @@ export class DrawingManager {
                     draw(point);
                     lastPoint = point;
                     this.checkAutoExpand(canvas, point);
+                } else if (this.currentTool === 'selection') {
+                    // Handle touch move for selection/dragging
+                    if (isSelectingRect) {
+                        updateSelectionRect(point);
+                    } else if (isDraggingSelection) {
+                        updateDraggingSelection(point);
+                    }
                 }
             }
         };
 
         const handleTouchEnd = (e: TouchEvent) => {
             e.preventDefault();
-            if (this.currentTool === 'pen') {
+            if (this.currentTool === 'selection') {
+                if (isSelectingRect) {
+                    const point = getPoint(e);
+                    if (point) {
+                        endSelectionRect(point, false);
+                    }
+                } else if (isDraggingSelection) {
+                    endDraggingSelection();
+                }
+            } else if (this.currentTool === 'pen') {
                 stopDrawing();
             } else if (this.currentTool === 'eraser') {
                 stopErasing();
@@ -372,6 +671,9 @@ export class DrawingManager {
                 this.drawLinearStroke(ctx, stroke.points, displayStyle);
             }
         }
+
+        // Draw selection highlights
+        this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
     }
 
     private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {

@@ -49,7 +49,7 @@ export class StyleManager {
         if (originalStyle.semantic === 'bold') {
             style.width *= 1.5;
         } else if (originalStyle.semantic === 'italic') {
-            style.width *= 0.9;
+            style.width *= 0.7;
         }
 
         return style;
