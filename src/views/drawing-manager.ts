@@ -802,12 +802,18 @@ export class DrawingManager {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Draw background
         const isDark = this.context.styleManager.isDarkTheme();
         ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+        // Draw grid
+        this.drawGrid(canvas, block);
+
+        // Draw strokes
         for (const strokeId of block.strokeIds) {
             const stroke = this.context.document.strokes.find(s => s.id === strokeId);
             if (!stroke) continue;
@@ -820,9 +826,6 @@ export class DrawingManager {
                 this.drawLinearStroke(ctx, stroke.points, displayStyle);
             }
         }
-
-        // Draw selection highlights
-        this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
     }
 
     private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {
@@ -1604,5 +1607,95 @@ export class DrawingManager {
                 }
             }
         });
+    }
+
+    // Grid Patern ----------------------------
+    private drawGrid(canvas: HTMLCanvasElement, block: Block): void {
+        if (!this.context.document?.gridSettings.enabled) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const grid = this.context.document.gridSettings;
+        const isDark = this.context.styleManager.isDarkTheme();
+
+        // Standard-Grid-Farbe basierend auf Theme
+        let gridColor = grid.color;
+        if (grid.color === '#e0e0e0' || !grid.color) {
+            gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+        }
+
+        ctx.save();
+        ctx.globalAlpha = grid.opacity;
+        ctx.strokeStyle = gridColor;
+        ctx.fillStyle = gridColor;
+        ctx.lineWidth = 1;
+
+        const size = grid.size;
+        const width = canvas.width;
+        const height = canvas.height;
+
+        switch (grid.type) {
+            case 'grid':
+                this.drawGridPattern(ctx, width, height, size);
+                break;
+            case 'lines':
+                this.drawLinePattern(ctx, width, height, size);
+                break;
+            case 'dots':
+                this.drawDotPattern(ctx, width, height, size);
+                break;
+        }
+
+        ctx.restore();
+    }
+
+    private drawGridPattern(ctx: CanvasRenderingContext2D, width: number, height: number, size: number): void {
+        // Vertikale Linien
+        for (let x = 0; x <= width; x += size) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, height);
+            ctx.stroke();
+        }
+
+        // Horizontale Linien
+        for (let y = 0; y <= height; y += size) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+    }
+
+    private drawLinePattern(ctx: CanvasRenderingContext2D, width: number, height: number, size: number): void {
+        // Nur horizontale Linien (wie liniertes Papier)
+        for (let y = 0; y <= height; y += size) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
+        }
+
+        // Optional: Eine dicke Linie alle 5 Zeilen (wie College-Block)
+        for (let y = size * 5; y <= height; y += size * 5) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.lineWidth = 1;
+        }
+    }
+
+    private drawDotPattern(ctx: CanvasRenderingContext2D, width: number, height: number, size: number): void {
+        // Punkte an den Gitter-Schnittstellen
+        for (let x = 0; x <= width; x += size) {
+            for (let y = 0; y <= height; y += size) {
+                ctx.beginPath();
+                ctx.arc(x, y, 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
     }
 }

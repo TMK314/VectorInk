@@ -90,6 +90,12 @@ export class InkView extends FileView {
         main.style.overflow = 'hidden';
         main.style.backgroundColor = 'var(--background-primary)';
         this.contentEl.appendChild(main);
+        
+        if (this.document) {
+            this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);
+        } else {
+            this.blocks = [];
+        }
 
         this.toolbarManager.createToolbar(main);
 
@@ -357,10 +363,10 @@ export class InkView extends FileView {
         this.blocksContainer = null;
 
         // Neues Dokument laden
-        await this.loadDocument();
+        await this.loadDocument(); // WICHTIG: Erst Dokument laden
 
         // UI neu aufbauen
-        await this.setupUI();
+        await this.setupUI(); // Dann UI aufbauen
 
         // Scroll positionieren
         if (this.blocksContainer) {
@@ -370,6 +376,8 @@ export class InkView extends FileView {
         // Tabellen-Tools aktualisieren
         setTimeout(() => {
             this.toolbarManager.updateTableToolsVisibility();
+            // Grid controls aktualisieren
+            this.toolbarManager.updateGridControls();
         }, 100);
     }
 

@@ -1,4 +1,4 @@
-import { InkDocumentData, Stroke, Block, Point, StrokeStyle } from '../types';
+import { InkDocumentData, Stroke, Block, Point, StrokeStyle, GridSettings } from '../types';
 
 export class InkDocument {
     private data: InkDocumentData;
@@ -16,6 +16,13 @@ export class InkDocument {
                     height: 297,
                     unit: 'mm',
                     backgroundColor: '#ffffff'
+                },
+                grid: {
+                    enabled: false,
+                    type: 'grid',
+                    size: 20,
+                    color: '#e0e0e0',
+                    opacity: 0.5
                 }
             },
             strokes: [],
@@ -34,7 +41,25 @@ export class InkDocument {
             }
         };
 
-        this.data = { ...defaultData, ...data };
+        // Tiefes Merging für Grid-Einstellungen
+        if (data && data.document) {
+            const mergedGrid = {
+                ...defaultData.document.grid,
+                ...(data.document.grid || {})
+            };
+            
+            this.data = {
+                ...defaultData,
+                ...data,
+                document: {
+                    ...defaultData.document,
+                    ...data.document,
+                    grid: mergedGrid
+                }
+            };
+        } else {
+            this.data = { ...defaultData, ...data };
+        }
     }
 
     // Getter for strokes (returns a copy)
@@ -45,6 +70,15 @@ export class InkDocument {
     // Getter for blocks (returns a copy)
     get blocks(): Block[] {
         return [...this.data.blocks];
+    }
+
+    get gridSettings(): GridSettings {
+        return this.data.document.grid;
+    }
+
+    setGridSettings(settings: Partial<GridSettings>): void {
+        this.data.document.grid = { ...this.data.document.grid, ...settings };
+        this.updateTimestamp();
     }
 
     // Getter for data

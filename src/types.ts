@@ -37,6 +37,8 @@ export interface Block {
     strokeIds: string[];
     bbox: BoundingBox;
     order: number;
+    textContent?: string;
+    textContentChanged?: boolean;
     tableGrid?: TableGrid; // Optional, nur für Tabellenblöcke
 }
 
@@ -59,6 +61,7 @@ export interface InkDocumentData {
         createdAt: string;
         updatedAt: string;
         page: PageSettings;
+        grid: GridSettings;
     };
     strokes: Stroke[];
     blocks: Block[];
@@ -124,4 +127,25 @@ export interface TableGrid {
     rowHeights: number[];  // Höhe jeder Zeile in Pixeln
     colWidths: number[];   // Breite jeder Spalte in Pixeln
     cells: TableCell[];    // Zellen mit Spans
+}
+
+export interface StrokeSelection {
+  strokeIds: string[];
+  boundingBox: BoundingBox;
+}
+
+export interface StrokeManipulationState {
+  isSelecting: boolean;
+  selectedStrokes: Set<string>;
+  isDragging: boolean;
+  dragOffset: Point;
+  copiedStrokes: Stroke[];
+}
+
+export interface GridSettings {
+    enabled: boolean;
+    type: 'grid' | 'lines' | 'dots' | 'none';
+    size: number;
+    color: string;
+    opacity: number;
 }

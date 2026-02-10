@@ -18,6 +18,13 @@ export class ToolbarManager {
     private tableModeIndicator: HTMLElement | null = null;
     private currentTableMode: 'vertical-line' | 'horizontal-line' | 'merge-cells' | null = null;
 
+    // Grid controls
+    private gridContainer: HTMLElement | null = null;
+    private gridEnabledCheckbox: HTMLInputElement | null = null;
+    private gridTypeSelect: HTMLSelectElement | null = null;
+    private gridSizeInput: HTMLInputElement | null = null;
+    private gridOpacityInput: HTMLInputElement | null = null;
+
     constructor(context: InkView) {
         this.context = context;
     }
@@ -51,6 +58,10 @@ export class ToolbarManager {
             this.context.drawingManager.setTool('selection');
             this.setTableMode(null); // Tabellenmodus verlassen
         }));
+
+        // Grid controls section
+        this.toolbar.appendChild(this.createSeparator());
+        this.createGridControls();
 
         // Stroke manipulation section
         this.toolbar.appendChild(this.createSeparator());
@@ -560,8 +571,6 @@ export class ToolbarManager {
         return button;
     }
 
-
-
     private createSeparator(): HTMLElement {
         const separator = document.createElement('div');
         separator.style.width = '1px';
@@ -587,5 +596,231 @@ export class ToolbarManager {
             block.style.marginTop = `${marginTop}px`;
             block.style.marginBottom = `${marginBottom}px`;
         });
+    }
+
+    private createGridControls(): void {
+        this.gridContainer = document.createElement('div');
+        this.gridContainer.style.display = 'flex';
+        this.gridContainer.style.gap = '5px';
+        this.gridContainer.style.alignItems = 'center';
+        this.gridContainer.style.flexWrap = 'wrap';
+
+        // Standard Grid-Einstellungen, falls document noch nicht geladen ist
+        const defaultGridSettings = {
+            enabled: false,
+            type: 'grid' as 'grid' | 'lines' | 'dots',
+            size: 20,
+            color: '#e0e0e0',
+            opacity: 0.5
+        };
+
+        // Grid-Einstellungen aus Dokument oder Standardwerte
+        const gridSettings = this.context.document?.gridSettings || defaultGridSettings;
+
+        // Grid toggle
+        const gridToggleContainer = document.createElement('div');
+        gridToggleContainer.style.display = 'flex';
+        gridToggleContainer.style.alignItems = 'center';
+        gridToggleContainer.style.gap = '3px';
+
+        this.gridEnabledCheckbox = document.createElement('input');
+        this.gridEnabledCheckbox.type = 'checkbox';
+        this.gridEnabledCheckbox.title = 'Toggle grid';
+        this.gridEnabledCheckbox.checked = gridSettings.enabled;
+        this.gridEnabledCheckbox.onchange = (e) => {
+            if (this.context.document) {
+                this.context.document.setGridSettings({
+                    enabled: (e.target as HTMLInputElement).checked
+                });
+                this.context.drawingManager.redrawAllBlocks();
+            } else {
+                // Falls document noch nicht geladen, zeichne trotzdem neu
+                this.context.drawingManager.redrawAllBlocks();
+            }
+        };
+
+        const gridLabel = document.createElement('span');
+        gridLabel.textContent = 'Grid';
+        gridLabel.style.fontSize = '12px';
+        gridLabel.style.cursor = 'pointer';
+        gridLabel.onclick = () => {
+            if (this.gridEnabledCheckbox) {
+                this.gridEnabledCheckbox.checked = !this.gridEnabledCheckbox.checked;
+                this.gridEnabledCheckbox.dispatchEvent(new Event('change'));
+            }
+        };
+
+        gridToggleContainer.appendChild(this.gridEnabledCheckbox);
+        gridToggleContainer.appendChild(gridLabel);
+        this.gridContainer.appendChild(gridToggleContainer);
+
+        // Grid type selector - nur anzeigen wenn Grid aktiviert ist
+        const gridTypeContainer = document.createElement('div');
+        gridTypeContainer.style.display = 'flex';
+        gridTypeContainer.style.alignItems = 'center';
+        gridTypeContainer.style.gap = '3px';
+        gridTypeContainer.style.display = gridSettings.enabled ? 'flex' : 'none';
+
+        const typeLabel = document.createElement('span');
+        typeLabel.textContent = 'Type:';
+        typeLabel.style.fontSize = '11px';
+        typeLabel.style.opacity = '0.8';
+        gridTypeContainer.appendChild(typeLabel);
+
+        this.gridTypeSelect = document.createElement('select');
+        this.gridTypeSelect.style.fontSize = '11px';
+        this.gridTypeSelect.style.padding = '2px';
+        this.gridTypeSelect.style.background = 'var(--background-primary)';
+        this.gridTypeSelect.style.color = 'var(--text-normal)';
+        this.gridTypeSelect.style.border = '1px solid var(--background-modifier-border)';
+        this.gridTypeSelect.style.borderRadius = '3px';
+
+        const gridTypes = [
+            { value: 'grid', label: 'Grid' },
+            { value: 'lines', label: 'Lines' },
+            { value: 'dots', label: 'Dots' }
+        ];
+
+        gridTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type.value;
+            option.textContent = type.label;
+            if (gridSettings.type === type.value) {
+                option.selected = true;
+            }
+            if (this.gridTypeSelect)
+                this.gridTypeSelect.appendChild(option);
+        });
+
+        this.gridTypeSelect.onchange = (e) => {
+            if (this.context.document) {
+                const type = (e.target as HTMLSelectElement).value as 'grid' | 'lines' | 'dots';
+                this.context.document.setGridSettings({ type });
+                this.context.drawingManager.redrawAllBlocks();
+            }
+        };
+
+        gridTypeContainer.appendChild(this.gridTypeSelect);
+        this.gridContainer.appendChild(gridTypeContainer);
+
+        // Grid size - nur anzeigen wenn Grid aktiviert ist
+        const gridSizeContainer = document.createElement('div');
+        gridSizeContainer.style.display = 'flex';
+        gridSizeContainer.style.alignItems = 'center';
+        gridSizeContainer.style.gap = '3px';
+        gridSizeContainer.style.display = gridSettings.enabled ? 'flex' : 'none';
+
+        const sizeLabel = document.createElement('span');
+        sizeLabel.textContent = 'Size:';
+        sizeLabel.style.fontSize = '11px';
+        sizeLabel.style.opacity = '0.8';
+        gridSizeContainer.appendChild(sizeLabel);
+
+        this.gridSizeInput = document.createElement('input');
+        this.gridSizeInput.type = 'number';
+        this.gridSizeInput.min = '5';
+        this.gridSizeInput.max = '100';
+        this.gridSizeInput.step = '5';
+        this.gridSizeInput.value = gridSettings.size.toString();
+        this.gridSizeInput.style.width = '45px';
+        this.gridSizeInput.style.fontSize = '11px';
+        this.gridSizeInput.style.padding = '2px';
+        this.gridSizeInput.style.border = '1px solid var(--background-modifier-border)';
+        this.gridSizeInput.style.borderRadius = '3px';
+        this.gridSizeInput.onchange = (e) => {
+            if (this.context.document) {
+                const size = parseInt((e.target as HTMLInputElement).value);
+                this.context.document.setGridSettings({ size });
+                this.context.drawingManager.redrawAllBlocks();
+            }
+        };
+
+        gridSizeContainer.appendChild(this.gridSizeInput);
+        this.gridContainer.appendChild(gridSizeContainer);
+
+        // Grid opacity - nur anzeigen wenn Grid aktiviert ist
+        const gridOpacityContainer = document.createElement('div');
+        gridOpacityContainer.style.display = 'flex';
+        gridOpacityContainer.style.alignItems = 'center';
+        gridOpacityContainer.style.gap = '3px';
+        gridOpacityContainer.style.display = gridSettings.enabled ? 'flex' : 'none';
+
+        const opacityLabel = document.createElement('span');
+        opacityLabel.textContent = 'Opacity:';
+        opacityLabel.style.fontSize = '11px';
+        opacityLabel.style.opacity = '0.8';
+        gridOpacityContainer.appendChild(opacityLabel);
+
+        this.gridOpacityInput = document.createElement('input');
+        this.gridOpacityInput.type = 'range';
+        this.gridOpacityInput.min = '0';
+        this.gridOpacityInput.max = '100';
+        this.gridOpacityInput.value = (gridSettings.opacity * 100).toString();
+        this.gridOpacityInput.style.width = '50px';
+        this.gridOpacityInput.onchange = (e) => {
+            if (this.context.document) {
+                const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
+                this.context.document.setGridSettings({ opacity });
+                this.context.drawingManager.redrawAllBlocks();
+            }
+        };
+
+        gridOpacityContainer.appendChild(this.gridOpacityInput);
+        this.gridContainer.appendChild(gridOpacityContainer);
+
+        // Event für Checkbox, um andere Controls ein/auszublenden
+        this.gridEnabledCheckbox.onchange = (e) => {
+            const enabled = (e.target as HTMLInputElement).checked;
+
+            // Andere Grid-Controls ein/ausblenden
+            if (gridTypeContainer) gridTypeContainer.style.display = enabled ? 'flex' : 'none';
+            if (gridSizeContainer) gridSizeContainer.style.display = enabled ? 'flex' : 'none';
+            if (gridOpacityContainer) gridOpacityContainer.style.display = enabled ? 'flex' : 'none';
+
+            // Grid-Einstellung speichern
+            if (this.context.document) {
+                this.context.document.setGridSettings({ enabled });
+            }
+
+            // Canvas neu zeichnen
+            this.context.drawingManager.redrawAllBlocks();
+        };
+
+        if (this.toolbar)
+            this.toolbar.appendChild(this.gridContainer);
+    }
+
+    public updateGridControls(): void {
+        if (!this.context.document) return;
+
+        const grid = this.context.document.gridSettings;
+
+        if (this.gridEnabledCheckbox) {
+            this.gridEnabledCheckbox.checked = grid.enabled;
+        }
+
+        if (this.gridTypeSelect) {
+            this.gridTypeSelect.value = grid.type;
+        }
+
+        if (this.gridSizeInput) {
+            this.gridSizeInput.value = grid.size.toString();
+        }
+
+        if (this.gridOpacityInput) {
+            this.gridOpacityInput.value = (grid.opacity * 100).toString();
+        }
+
+        // Andere Controls entsprechend ein/ausblenden
+        const gridContainer = this.gridContainer;
+        if (gridContainer) {
+            const gridTypeContainer = gridContainer.querySelector('div:nth-child(2)') as HTMLElement;
+            const gridSizeContainer = gridContainer.querySelector('div:nth-child(3)') as HTMLElement;
+            const gridOpacityContainer = gridContainer.querySelector('div:nth-child(4)') as HTMLElement;
+
+            if (gridTypeContainer) gridTypeContainer.style.display = grid.enabled ? 'flex' : 'none';
+            if (gridSizeContainer) gridSizeContainer.style.display = grid.enabled ? 'flex' : 'none';
+            if (gridOpacityContainer) gridOpacityContainer.style.display = grid.enabled ? 'flex' : 'none';
+        }
     }
 }

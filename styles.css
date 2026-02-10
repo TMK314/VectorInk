@@ -341,3 +341,53 @@
   background: var(--interactive-accent) !important;
   color: var(--text-on-accent) !important;
 }
+
+
+
+/* Grid controls styling */
+.grid-controls {
+    background: var(--background-secondary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.grid-controls select,
+.grid-controls input[type="number"] {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 11px;
+}
+
+.grid-controls input[type="range"] {
+    vertical-align: middle;
+}
+
+.grid-controls label {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+/* Grid preview */
+.grid-preview {
+    width: 100px;
+    height: 60px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    margin-top: 5px;
+    overflow: hidden;
+}
+
+/* Dark mode grid colors */
+.theme-dark .grid-preview {
+    background: #1a1a1a;
+}
+
+.theme-light .grid-preview {
+    background: #ffffff;
+}
