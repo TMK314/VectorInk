@@ -2,6 +2,7 @@ import { table } from 'console';
 import { Block, Stroke, TableCell } from '../types';
 import { InkView } from './InkView';
 import { Notice } from 'obsidian';
+import { LineDetection } from '../ocr/LineDetection';
 
 export class DigitalizationManager {
     private context: InkView;
@@ -18,6 +19,32 @@ export class DigitalizationManager {
             }
 
             let markdownContent = '';
+
+            // Für Line Detection alle Strokes sammeln
+            // Für jeden Block einzeln vorgehen
+            for (const block of this.context.blocks.sort((a, b) => a.order - b.order)) {
+                // Stiche dieses Blocks holen
+                const blockStrokes = block.strokeIds
+                    .map(id => this.context.document!.getStroke(id))
+                    .filter((s): s is Stroke => s !== undefined);
+
+                // Bitmap für diesen Block erstellen (Auflösung z.B. 10 Pixel pro Einheit)
+                const resolution = 5 * 0.01; // Experimentell anpassen
+                const lineDetection = new LineDetection();
+                const bitmap = lineDetection.createBitmapFromStrokes(blockStrokes, resolution);
+                console.log("Bitemap: ", bitmap);
+
+                // Bitmap auf dem Canvas des Blocks zeichnen
+                this.context.drawBitmapForBlock(block, bitmap, resolution);
+
+                // Bestehende Markdown-Generierung
+                const blockContent = this.digitalizeBlock(block);
+                if (blockContent) {
+                    markdownContent += blockContent + '\n\n';
+                }
+            }
+
+
 
             for (const block of this.context.blocks.sort((a, b) => a.order - b.order)) {
                 const blockContent = this.digitalizeBlock(block);
@@ -132,7 +159,7 @@ export class DigitalizationManager {
 
         const grid = block.tableGrid;
         const tableContent: string[][] = [];
-        
+
         // Initialisiere leere Zellen
         for (let row = 0; row < grid.rows; row++) {
             tableContent[row] = [];
@@ -149,7 +176,7 @@ export class DigitalizationManager {
 
             // Berechne den Schwerpunkt des Strokes
             const center = this.calculateStrokeCenter(stroke);
-            
+
             // Finde die Zelle, die den Schwerpunkt enthält
             const cell = this.findContainingCell(block, center);
             if (cell) {
@@ -187,13 +214,13 @@ export class DigitalizationManager {
 
         // Erstelle Markdown-Tabelle
         let markdownTable = '';
-        
+
         // Header
         markdownTable += '| ' + Array(grid.cols).fill(' ').join(' | ') + ' |\n';
-        
+
         // Trennlinie
         markdownTable += '|' + Array(grid.cols).fill('---').join('|') + '|\n';
-        
+
         // Datenzeilen
         for (let row = 0; row < grid.rows; row++) {
             const rowContent = [];
@@ -224,15 +251,15 @@ export class DigitalizationManager {
 
     private calculateStrokeCenter(stroke: Stroke): { x: number, y: number } {
         if (stroke.points.length === 0) return { x: 0, y: 0 };
-        
+
         let sumX = 0;
         let sumY = 0;
-        
+
         for (const point of stroke.points) {
             sumX += point.x;
             sumY += point.y;
         }
-        
+
         return {
             x: sumX / stroke.points.length,
             y: sumY / stroke.points.length
@@ -248,10 +275,10 @@ export class DigitalizationManager {
         for (let row = 0; row < grid.rows; row++) {
             let currentX = 0;
             const rowHeight = grid.rowHeights[row];
-            
+
             for (let col = 0; col < grid.cols; col++) {
                 const colWidth = grid.colWidths[col];
-                
+
                 if (colWidth === undefined || rowHeight === undefined) {
                     currentX += colWidth || 0;
                     continue;
@@ -260,19 +287,19 @@ export class DigitalizationManager {
                 // Prüfe, ob Punkt in dieser Basis-Zelle ist
                 if (point.x >= currentX && point.x <= currentX + colWidth &&
                     point.y >= currentY && point.y <= currentY + rowHeight) {
-                    
+
                     // Finde die tatsächliche Zelle (mit Spans)
                     const cell = grid.cells.find(c => {
                         return c.row <= row && row < c.row + c.rowSpan &&
-                               c.col <= col && col < c.col + c.colSpan;
+                            c.col <= col && col < c.col + c.colSpan;
                     });
-                    
+
                     return cell || null;
                 }
-                
+
                 currentX += colWidth;
             }
-            
+
             if (rowHeight === undefined) continue;
             currentY += rowHeight;
         }

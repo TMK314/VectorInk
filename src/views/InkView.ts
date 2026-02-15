@@ -90,7 +90,7 @@ export class InkView extends FileView {
         main.style.overflow = 'hidden';
         main.style.backgroundColor = 'var(--background-primary)';
         this.contentEl.appendChild(main);
-        
+
         if (this.document) {
             this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);
         } else {
@@ -448,5 +448,65 @@ export class InkView extends FileView {
         if (themeObserver) {
             themeObserver.disconnect();
         }
+    }
+
+    //Debug
+    /**
+ * Zeichnet eine Dichtebitmap auf dem Canvas eines bestimmten Blocks.
+ * @param block - Der Block, auf dessen Canvas gezeichnet wird.
+ * @param bitmap - Die Dichtematrix (number[][]), erzeugt von createBitmapFromStrokes.
+ * @param resolution - Die Auflösung, mit der die Bitmap erstellt wurde (Pixel pro Einheit).
+ */
+    public drawBitmapForBlock(block: Block, bitmap: number[][], resolution: number): void {
+        const canvas = this.blockManager.getCanvasForBlock(block.id);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const height = bitmap.length;
+        if (!bitmap[0]) return;
+        const width = height > 0 ? bitmap[0].length : 0;
+        if (width === 0 || height === 0) return;
+
+        // Maximale Dichte für Normalisierung ermitteln
+        let maxDensity = 0;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (!bitmap[y]) continue;
+                if (!bitmap[y]![x]) continue;
+                maxDensity = Math.max(maxDensity, bitmap[y]![x]!);
+            }
+        }
+
+        // Offscreen-Canvas in der Größe der Bitmap erstellen
+        const offscreen = document.createElement('canvas');
+        offscreen.width = width;
+        offscreen.height = height;
+        const offCtx = offscreen.getContext('2d');
+        if (!offCtx) return;
+
+        // Bitmap als ImageData (rotes Overlay mit Transparenz)
+        const imageData = offCtx.createImageData(width, height);
+        const data = imageData.data;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                if (!bitmap[y]) continue;
+                if (!bitmap[y]![x]) continue;
+                const value = maxDensity > 0 ? bitmap[y]![x]! / maxDensity : 0;
+                const alpha = Math.round(value * 255);
+                data[idx] = 255;     // Rot
+                data[idx + 1] = 0;   // Grün
+                data[idx + 2] = 0;   // Blau
+                data[idx + 3] = alpha; // Transparenz = Dichte
+            }
+        }
+        offCtx.putImageData(imageData, 0, 0);
+
+        // Bitmap auf das Block-Canvas zeichnen – skaliert auf die Block-Bounding-Box
+        ctx.save();
+        // Annahme: Das Canvas verwendet Weltkoordinaten (1 Einheit = 1 Pixel)
+        ctx.drawImage(offscreen, block.bbox.x, block.bbox.y, block.bbox.width, block.bbox.height);
+        ctx.restore();
     }
 }
