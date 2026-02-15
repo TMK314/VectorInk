@@ -20,31 +20,45 @@ export class DigitalizationManager {
 
             let markdownContent = '';
 
-            // Für Line Detection alle Strokes sammeln
-            // Für jeden Block einzeln vorgehen
+            // Dichtemap
             for (const block of this.context.blocks.sort((a, b) => a.order - b.order)) {
-                // Stiche dieses Blocks holen
                 const blockStrokes = block.strokeIds
                     .map(id => this.context.document!.getStroke(id))
                     .filter((s): s is Stroke => s !== undefined);
 
-                // Bitmap für diesen Block erstellen (Auflösung z.B. 10 Pixel pro Einheit)
-                const resolution = 5 * 0.01; // Experimentell anpassen
+                const resolution = 10 * 0.01; // experimentell
                 const lineDetection = new LineDetection();
-                const bitmap = lineDetection.createBitmapFromStrokes(blockStrokes, resolution);
-                console.log("Bitemap: ", bitmap);
 
-                // Bitmap auf dem Canvas des Blocks zeichnen
-                this.context.drawBitmapForBlock(block, bitmap, resolution);
+                const bitmapResult = lineDetection.createBitmapFromStrokes(blockStrokes, resolution);
+                const bitmap = bitmapResult.density;
 
-                // Bestehende Markdown-Generierung
+                // Dichte-Bitmap zeichnen (optional)
+                this.context.drawBitmapForBlock(block, bitmap, resolution, bitmapResult.minX, bitmapResult.minY);
+
+                // Trennlinien-Pfade finden
+                const paths = lineDetection.findSeparatorPaths(
+                    bitmap,
+                    bitmapResult.minX,          // ← jetzt korrekte Werte
+                    bitmapResult.minY,
+                    resolution,
+                    0.002,   // thresholdFactor
+                    2,       // minGapRows
+                    1,       // costPerStep
+                    0.5      // densityWeight – reduziert, um auch schräge Pfade zu ermöglichen
+                );
+
+                // Pfade zeichnen (verschiedene Farben für verschiedene Pfade)
+                const colors = ['blue', 'green', 'orange', 'purple', 'red'];
+                paths.forEach((path, index) => {
+                    this.context.drawPath(block, path.points, '#555555', true);
+                });
+
+                // Markdown-Inhalt generieren (unverändert)
                 const blockContent = this.digitalizeBlock(block);
                 if (blockContent) {
                     markdownContent += blockContent + '\n\n';
                 }
             }
-
-
 
             for (const block of this.context.blocks.sort((a, b) => a.order - b.order)) {
                 const blockContent = this.digitalizeBlock(block);
