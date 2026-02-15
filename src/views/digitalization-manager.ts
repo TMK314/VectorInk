@@ -41,6 +41,14 @@ export class DigitalizationManager {
                 // Dichte-Bitmap zeichnen (optional)
                 this.context.drawBitmapForBlock(block, bitmap, resolution, bitmapResult.minX, bitmapResult.minY);
 
+                const gapThreshold = 0.8; // in Weltkoordinaten, je nach Schriftgröße anpassen
+                const startRowCandidates = this.getSeparatorStartRowsFromStrokes(
+                    blockStrokes,
+                    bitmapResult.minY,
+                    resolution,
+                    gapThreshold
+                );
+
                 // Trennlinien-Pfade finden
                 const paths = lineDetection.findSeparatorPaths(
                     bitmap,
@@ -50,7 +58,8 @@ export class DigitalizationManager {
                     0.002,   // thresholdFactor
                     2,       // minGapRows
                     0.01,       // costPerStep
-                    0.5      // densityWeight – reduziert, um auch schräge Pfade zu ermöglichen
+                    0.5,      // densityWeight – reduziert, um auch schräge Pfade zu ermöglichen
+                    startRowCandidates
                 );
 
                 // Pfade zeichnen (verschiedene Farben für verschiedene Pfade)
@@ -325,5 +334,74 @@ export class DigitalizationManager {
         }
 
         return null;
+    }
+
+    /**
+ * Ermittelt Start-Y-Positionen (in Bitmap-Zeilen) für Trennlinien basierend auf Strich-Clustering.
+ * @param strokes - Liste der Striche im Block
+ * @param minY - minimale y-Koordinate der Bounding Box (Welt)
+ * @param resolution - Auflösung der Bitmap
+ * @param gapThreshold - maximaler vertikaler Abstand zwischen zwei Strichen, um noch zur selben Zeile zu gehören (in Weltkoordinaten)
+ * @returns Array von Zeilenindizes (in Bitmap-Koordinaten), die als Startpunkte für die Pfadsuche dienen
+ */
+    private getSeparatorStartRowsFromStrokes(
+        strokes: Stroke[],
+        minY: number,
+        resolution: number,
+        gapThreshold: number = 0.8 // in Weltkoordinaten, z.B. 0.8 cm
+    ): number[] {
+        if (strokes.length === 0) return [];
+
+        // Für jeden Strich die y-Ausdehnung berechnen
+        const strokeInfos = strokes
+            .map(stroke => {
+                if (stroke.points.length === 0) return null;
+                let minY = Infinity, maxY = -Infinity;
+                for (const p of stroke.points) {
+                    minY = Math.min(minY, p.y);
+                    maxY = Math.max(maxY, p.y);
+                }
+                return { minY, maxY };
+            })
+            .filter(info => info !== null) as { minY: number; maxY: number }[];
+
+        if (strokeInfos.length === 0) return [];
+
+        // Sortieren nach der oberen Kante (minY)
+        strokeInfos.sort((a, b) => a.minY - b.minY);
+
+        // Cluster bilden
+        const clusters: { minY: number; maxY: number }[] = [];
+        if (strokeInfos[0] === undefined) return [];
+        let currentCluster = { minY: strokeInfos[0].minY, maxY: strokeInfos[0].maxY };
+
+        for (let i = 1; i < strokeInfos.length; i++) {
+            const info = strokeInfos[i];
+            if (info === undefined) continue;
+            const gap = info.minY - currentCluster.maxY; // Lücke zwischen den Bounding-Boxen
+            if (gap <= gapThreshold) {
+                // Gehört zur gleichen Zeile
+                currentCluster.maxY = Math.max(currentCluster.maxY, info.maxY);
+                currentCluster.minY = Math.min(currentCluster.minY, info.minY); // optional
+            } else {
+                // Neue Zeile
+                clusters.push(currentCluster);
+                currentCluster = { minY: info.minY, maxY: info.maxY };
+            }
+        }
+        clusters.push(currentCluster);
+
+        // Trennlinien zwischen den Clustern
+        const separatorRows: number[] = [];
+        for (let i = 0; i < clusters.length - 1; i++) {
+            const upper = clusters[i];
+            const lower = clusters[i + 1];
+            if (upper === undefined || lower === undefined) continue;
+            const gapMidY = (upper.maxY + lower.minY) / 2; // Mitte der Lücke
+            const row = Math.floor((gapMidY - minY) * resolution);
+            separatorRows.push(row);
+        }
+
+        return separatorRows;
     }
 }

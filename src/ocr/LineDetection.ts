@@ -195,53 +195,63 @@ export class LineDetection {
         thresholdFactor: number = 0.05,
         minGapRows: number = 3,
         costPerStep: number = 1,
-        densityWeight: number = 1
+        densityWeight: number = 1,
+        startRowCandidates?: number[]
     ): PathResult[] {
         const height = density.length;
         if (height === 0) return [];
         const width = density[0]?.length ?? 0;
         if (width === 0) return [];
 
-        // --- Horizontale Projektion (wie gehabt) ---
-        const rowSums: number[] = new Array(height).fill(0);
-        for (let r = 0; r < height; r++) {
-            for (let c = 0; c < width; c++) {
+        let startCandidates: number[];
+
+        if (startRowCandidates && startRowCandidates.length > 0) {
+            // Benutzerdefinierte Kandidaten verwenden, aber auf gültigen Bereich beschneiden
+            startCandidates = startRowCandidates
+                .map(y => Math.min(Math.max(y, 0), height - 1))
+                .filter((v, i, a) => a.indexOf(v) === i); // Duplikate entfernen
+        } else {
+            // --- Horizontale Projektion (wie gehabt) ---
+            const rowSums: number[] = new Array(height).fill(0);
+            for (let r = 0; r < height; r++) {
+                for (let c = 0; c < width; c++) {
+                    if (rowSums[r] === undefined) continue;
+                    rowSums[r]! += density[r]?.[c] ?? 0;
+                }
+            }
+            const maxSum = Math.max(...rowSums);
+            const threshold = maxSum * thresholdFactor;
+
+            const gaps: { start: number; end: number }[] = [];
+            let inGap = false;
+            let gapStart = 0;
+            for (let r = 0; r < height; r++) {
                 if (rowSums[r] === undefined) continue;
-                rowSums[r]! += density[r]?.[c] ?? 0;
+                const isGap = rowSums[r]! < threshold;
+                if (isGap && !inGap) {
+                    inGap = true;
+                    gapStart = r;
+                } else if (!isGap && inGap) {
+                    inGap = false;
+                    gaps.push({ start: gapStart, end: r - 1 });
+                }
             }
-        }
-        const maxSum = Math.max(...rowSums);
-        const threshold = maxSum * thresholdFactor;
+            if (inGap) gaps.push({ start: gapStart, end: height - 1 });
 
-        const gaps: { start: number; end: number }[] = [];
-        let inGap = false;
-        let gapStart = 0;
-        for (let r = 0; r < height; r++) {
-            if (rowSums[r] === undefined) continue;
-            const isGap = rowSums[r]! < threshold;
-            if (isGap && !inGap) {
-                inGap = true;
-                gapStart = r;
-            } else if (!isGap && inGap) {
-                inGap = false;
-                gaps.push({ start: gapStart, end: r - 1 });
+            const significantGaps = gaps.filter(gap => (gap.end - gap.start + 1) >= minGapRows);
+            const gapCandidates = significantGaps.map(gap => Math.floor((gap.start + gap.end) / 2));
+
+            // --- Zusätzlich: gleichmäßig verteilte Startzeilen ---
+            const uniformCandidates: number[] = [];
+            const numUniform = 10; // Anzahl gleichmäßig verteilter Zeilen
+            for (let i = 0; i < numUniform; i++) {
+                const y = Math.floor((i / (numUniform - 1)) * (height - 1));
+                uniformCandidates.push(y);
             }
+
+            // Kombinierte Liste (ohne Duplikate)
+            startCandidates = [...new Set([...gapCandidates, ...uniformCandidates])].sort((a, b) => a - b);
         }
-        if (inGap) gaps.push({ start: gapStart, end: height - 1 });
-
-        const significantGaps = gaps.filter(gap => (gap.end - gap.start + 1) >= minGapRows);
-        const gapCandidates = significantGaps.map(gap => Math.floor((gap.start + gap.end) / 2));
-
-        // --- Zusätzlich: gleichmäßig verteilte Startzeilen ---
-        const uniformCandidates: number[] = [];
-        const numUniform = 10; // Anzahl gleichmäßig verteilter Zeilen
-        for (let i = 0; i < numUniform; i++) {
-            const y = Math.floor((i / (numUniform - 1)) * (height - 1));
-            uniformCandidates.push(y);
-        }
-
-        // Kombinierte Liste (ohne Duplikate)
-        const startCandidates = [...new Set([...gapCandidates, ...uniformCandidates])].sort((a, b) => a - b);
 
         const paths: PathResult[] = [];
 
