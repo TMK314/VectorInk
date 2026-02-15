@@ -26,10 +26,16 @@ export class DigitalizationManager {
                     .map(id => this.context.document!.getStroke(id))
                     .filter((s): s is Stroke => s !== undefined);
 
-                const resolution = 10 * 0.01; // experimentell
+                const resolution = 7.5 * 0.01; // experimentell
+                const horizontalMergeWorldDistance = 50; // experimentell, je nach Schriftgröße anpassen
+                const horizontalMergeRadius = Math.ceil(horizontalMergeWorldDistance * resolution);
                 const lineDetection = new LineDetection();
 
-                const bitmapResult = lineDetection.createBitmapFromStrokes(blockStrokes, resolution);
+                const bitmapResult = lineDetection.createBitmapFromStrokes(
+                    blockStrokes,
+                    resolution,
+                    horizontalMergeRadius   // jetzt mit Filter
+                );
                 const bitmap = bitmapResult.density;
 
                 // Dichte-Bitmap zeichnen (optional)
@@ -43,14 +49,14 @@ export class DigitalizationManager {
                     resolution,
                     0.002,   // thresholdFactor
                     2,       // minGapRows
-                    1,       // costPerStep
+                    0.01,       // costPerStep
                     0.5      // densityWeight – reduziert, um auch schräge Pfade zu ermöglichen
                 );
 
                 // Pfade zeichnen (verschiedene Farben für verschiedene Pfade)
                 const colors = ['blue', 'green', 'orange', 'purple', 'red'];
                 paths.forEach((path, index) => {
-                    this.context.drawPath(block, path.points, '#555555', true);
+                    this.context.drawPath(block, path.points, 'blue', true);
                 });
 
                 // Markdown-Inhalt generieren (unverändert)

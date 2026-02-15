@@ -31,7 +31,10 @@ export class LineDetection {
     Schritt 1
     Erstellen einer Bitmap
     */
-    public createBitmapFromStrokes(strokes: Stroke[], resolution: number): BitmapResult {
+    public createBitmapFromStrokes(strokes: Stroke[],
+        resolution: number,
+        horizontalMergeRadius: number = 0
+    ): BitmapResult {
         // 1. Bounding Box aller Striche berechnen
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const stroke of strokes) {
@@ -52,7 +55,7 @@ export class LineDetection {
         const actualWidth = Math.max(1, width);
         const actualHeight = Math.max(1, height);
 
-        const density: number[][] = Array.from({ length: actualHeight }, () => new Array(actualWidth).fill(0));
+        let density: number[][] = Array.from({ length: actualHeight }, () => new Array(actualWidth).fill(0));
 
         const pointToCell = (x: number, y: number): [number, number] => {
             const col = Math.floor((x - minX) * resolution);
@@ -136,8 +139,40 @@ export class LineDetection {
                 }
             }
         }
-
+        if (horizontalMergeRadius > 0) {
+            density = this.dilateHorizontal(density, horizontalMergeRadius);
+        }
         return { density, minX, minY, maxX, maxY };
+    }
+
+    /**
+ * Wendet einen horizontalen Maximum-Filter auf die Dichtematrix an.
+ * @param density - 2D-Array [row][col]
+ * @param radius - Anzahl der Pixel links und rechts, die in das Maximum eingehen (insgesamt 2*radius+1)
+ * @returns neue Dichtematrix gleicher Größe
+ */
+    private dilateHorizontal(density: number[][], radius: number): number[][] {
+        const height = density.length;
+        if (height === 0) return [];
+        const width = density[0]?.length ?? 0;
+        if (width === 0) return [];
+
+        const result: number[][] = Array.from({ length: height }, () => new Array(width).fill(0));
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let maxVal = 0;
+                const startX = Math.max(0, x - radius);
+                const endX = Math.min(width - 1, x + radius);
+                for (let k = startX; k <= endX; k++) {
+                    const val = density[y]?.[k] ?? 0;
+                    if (val > maxVal) maxVal = val;
+                }
+                if (result[y] === undefined) continue;
+                result[y]![x] = maxVal;
+            }
+        }
+        return result;
     }
 
     /**
@@ -163,21 +198,18 @@ export class LineDetection {
         densityWeight: number = 1
     ): PathResult[] {
         const height = density.length;
-        if (density[0] === undefined) return [];
-        const width = height > 0 ? density[0].length : 0;
-        if (height === 0 || width === 0) return [];
+        if (height === 0) return [];
+        const width = density[0]?.length ?? 0;
+        if (width === 0) return [];
 
-        // Horizontale Projektion
+        // --- Horizontale Projektion (wie gehabt) ---
         const rowSums: number[] = new Array(height).fill(0);
         for (let r = 0; r < height; r++) {
             for (let c = 0; c < width; c++) {
-                if (density[r] === undefined) continue;
-                if (density[r]![c] === undefined) continue;
                 if (rowSums[r] === undefined) continue;
-                rowSums[r]! += density[r]![c]!;
+                rowSums[r]! += density[r]?.[c] ?? 0;
             }
         }
-
         const maxSum = Math.max(...rowSums);
         const threshold = maxSum * thresholdFactor;
 
@@ -198,14 +230,24 @@ export class LineDetection {
         if (inGap) gaps.push({ start: gapStart, end: height - 1 });
 
         const significantGaps = gaps.filter(gap => (gap.end - gap.start + 1) >= minGapRows);
-        const startCandidates = significantGaps.map(gap => Math.floor((gap.start + gap.end) / 2));
+        const gapCandidates = significantGaps.map(gap => Math.floor((gap.start + gap.end) / 2));
+
+        // --- Zusätzlich: gleichmäßig verteilte Startzeilen ---
+        const uniformCandidates: number[] = [];
+        const numUniform = 10; // Anzahl gleichmäßig verteilter Zeilen
+        for (let i = 0; i < numUniform; i++) {
+            const y = Math.floor((i / (numUniform - 1)) * (height - 1));
+            uniformCandidates.push(y);
+        }
+
+        // Kombinierte Liste (ohne Duplikate)
+        const startCandidates = [...new Set([...gapCandidates, ...uniformCandidates])].sort((a, b) => a - b);
 
         const paths: PathResult[] = [];
 
         for (const startY of startCandidates) {
             const path = this.aStarSearch(density, startY, width, height, costPerStep, densityWeight);
             if (path) {
-                // Pfad in Weltkoordinaten konvertieren – Point[] mit t=0 (wird nicht benötigt, aber Typ verlangt es)
                 const worldPoints: Point[] = path.map(([col, row]) => ({
                     x: minX + (col + 0.5) / resolution,
                     y: minY + (row + 0.5) / resolution,
@@ -216,9 +258,7 @@ export class LineDetection {
             }
         }
 
-        console.log("Paths: ", paths);
-        // Gruppierung ähnlicher Pfade
-        const groupedPaths = this.groupSimilarPaths(paths, 2);// height / 20);
+        const groupedPaths = this.groupSimilarPaths(paths, 2);
         return groupedPaths;
     }
 
@@ -234,42 +274,52 @@ export class LineDetection {
         costPerStep: number,
         densityWeight: number
     ): [number, number][] | null {
+        const minStepCost = costPerStep; // minimale Kosten pro Schritt (horizontal)
+
         const openSet: AStarNode[] = [];
         const closedSet = new Set<string>();
         const startNode: AStarNode = {
             x: 0,
             y: startY,
             g: 0,
-            h: this.heuristic(0, startY, width - 1, startY),
+            h: (width - 1 - 0) * minStepCost,
             f: 0,
             parent: null
         };
         startNode.f = startNode.g + startNode.h;
         openSet.push(startNode);
-
         const nodeMap = new Map<string, AStarNode>();
         nodeMap.set(`0,${startY}`, startNode);
 
-        while (openSet.length > 0) {
-            openSet.sort((a, b) => a.f - b.f);
-            const current = openSet.shift();
-            if (!current) continue; // Sicherheitscheck
+        let bestTerminalCost = Infinity;
+        let bestTerminalNode: AStarNode | null = null;
 
+        while (openSet.length > 0) {
+            // Frühzeitiger Abbruch, wenn die beste Lösung bereits besser ist als alle verbleibenden Schätzungen
+            if (openSet[0] === undefined) continue;
+            if (bestTerminalCost < Infinity && openSet[0].f >= bestTerminalCost) {
+                break;
+            }
+
+            openSet.sort((a, b) => a.f - b.f);
+            const current = openSet.shift()!;
             const key = `${current.x},${current.y}`;
             if (closedSet.has(key)) continue;
             closedSet.add(key);
 
-            if (current.x === width - 1) {
-                // Pfad rekonstruieren
-                const path: [number, number][] = [];
-                let node: AStarNode | null = current;
-                while (node) {
-                    path.unshift([node.x, node.y]);
-                    node = node.parent;
+            // Prüfe, ob current ein terminaler Knoten ist (rechte Kante, obere Kante oder untere Kante)
+            const isTerminal = (current.x === width - 1) || (current.y === 0) || (current.y === height - 1);
+            if (isTerminal) {
+                const totalCost = (current.x === width - 1)
+                    ? current.g
+                    : current.g + (width - 1 - current.x) * minStepCost;
+                if (totalCost < bestTerminalCost) {
+                    bestTerminalCost = totalCost;
+                    bestTerminalNode = current;
                 }
-                return path;
             }
 
+            // Nachbarn expandieren
             for (let dx = -1; dx <= 1; dx++) {
                 for (let dy = -1; dy <= 1; dy++) {
                     if (dx === 0 && dy === 0) continue;
@@ -281,9 +331,7 @@ export class LineDetection {
                     if (closedSet.has(neighborKey)) continue;
 
                     const moveCost = Math.hypot(dx, dy) * costPerStep;
-                    if (density[ny] === undefined) continue;
-                    if (density[ny][nx] === undefined) continue;
-                    const densityCost = density[ny][nx] * densityWeight;
+                    const densityCost = (density[ny]?.[nx] ?? 0) * densityWeight;
                     const tentativeG = current.g + moveCost + densityCost;
 
                     let neighbor = nodeMap.get(neighborKey);
@@ -292,7 +340,7 @@ export class LineDetection {
                             x: nx,
                             y: ny,
                             g: tentativeG,
-                            h: width - 1 - nx,
+                            h: (width - 1 - nx) * minStepCost,
                             f: 0,
                             parent: current
                         };
@@ -307,12 +355,28 @@ export class LineDetection {
                 }
             }
         }
+
+        if (bestTerminalNode) {
+            const pathToTerminal = this.reconstructPath(bestTerminalNode);
+            // Wenn der beste Knoten nicht die rechte Kante erreicht hat, füge horizontale Punkte hinzu
+            if (bestTerminalNode.x < width - 1) {
+                for (let x = bestTerminalNode.x + 1; x < width; x++) {
+                    pathToTerminal.push([x, bestTerminalNode.y]);
+                }
+            }
+            return pathToTerminal;
+        }
         return null;
     }
 
-    private heuristic(x1: number, y1: number, x2: number, y2: number): number {
-        // Euklidische Distanz (Heuristik sollte zulässig sein)
-        return Math.hypot(x2 - x1, y2 - y1);
+    private reconstructPath(node: AStarNode): [number, number][] {
+        const path: [number, number][] = [];
+        let current: AStarNode | null = node;
+        while (current) {
+            path.unshift([current.x, current.y]);
+            current = current.parent;
+        }
+        return path;
     }
 
     private calculatePathCost(

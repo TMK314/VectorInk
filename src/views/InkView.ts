@@ -457,7 +457,7 @@ export class InkView extends FileView {
      * @param bitmap - Die Dichtematrix (number[][]), erzeugt von createBitmapFromStrokes.
      * @param resolution - Die Auflösung, mit der die Bitmap erstellt wurde (Pixel pro Einheit).
      */
-    public drawBitmapForBlock(block: Block, bitmap: number[][], resolution: number, offsetX: number, offsetY: number): void {
+    public drawBitmapForBlock(block: Block, bitmap: number[][], resolution: number, minX: number, minY: number): void {
         const canvas = this.blockManager.getCanvasForBlock(block.id);
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -465,11 +465,10 @@ export class InkView extends FileView {
 
         const height = bitmap.length;
         if (height === 0) return;
-        if (bitmap[0] === undefined) return;
-        const width = bitmap[0].length;
+        const width = bitmap[0]?.length ?? 0;
         if (width === 0) return;
 
-        // Maximale Dichte ermitteln
+        // Maximale Dichte für Transparenz-Skalierung
         let maxDensity = 0;
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
@@ -478,6 +477,7 @@ export class InkView extends FileView {
             }
         }
 
+        // Offscreen-Canvas in der Größe der Bitmap
         const offscreen = document.createElement('canvas');
         offscreen.width = width;
         offscreen.height = height;
@@ -491,7 +491,7 @@ export class InkView extends FileView {
                 const idx = (y * width + x) * 4;
                 const value = maxDensity > 0 ? (bitmap[y]?.[x] ?? 0) / maxDensity : 0;
                 const alpha = Math.round(value * 255);
-                data[idx] = 255;
+                data[idx] = 255;     // Rot
                 data[idx + 1] = 0;
                 data[idx + 2] = 0;
                 data[idx + 3] = alpha;
@@ -499,9 +499,14 @@ export class InkView extends FileView {
         }
         offCtx.putImageData(imageData, 0, 0);
 
+        // Weltgröße der Bitmap
+        const worldWidth = width / resolution;
+        const worldHeight = height / resolution;
+
+        // Temporär die Transformation zurücksetzen und die Bitmap in Weltkoordinaten zeichnen
         ctx.save();
-        // Zeichne die Bitmap mit den tatsächlichen Offsets
-        ctx.drawImage(offscreen, offsetX, offsetY, block.bbox.width, block.bbox.height);
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Identitätsmatrix
+        ctx.drawImage(offscreen, minX, minY, worldWidth, worldHeight);
         ctx.restore();
     }
 
