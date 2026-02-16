@@ -33,16 +33,15 @@ interface PixelPath {
 }
 
 export class LineDetection {
-    /*
-    Schritt 1
-    Erstellen einer Bitmap
-    */
-    public createBitmapFromStrokes(strokes: Stroke[],
+
+    public createBitmapFromStrokes(
+        strokes: Stroke[],
         resolution: number,
         horizontalMergeRadius: number = 0,
-        densitySubtract: number = 0
+        densitySubtract: number = 0,
+        includePercent: number = 100   // Anteil jedes Strichs in %, der mittig erhalten bleibt
     ): BitmapResult {
-        // 1. Bounding Box aller Striche berechnen
+        // 1. Globale Bounding Box über alle Punkte (unabhängig vom Clipping)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const stroke of strokes) {
             for (const point of stroke.points) {
@@ -62,8 +61,10 @@ export class LineDetection {
         const actualWidth = Math.max(1, width);
         const actualHeight = Math.max(1, height);
 
+        // Dichtematrix initialisieren
         let density: number[][] = Array.from({ length: actualHeight }, () => new Array(actualWidth).fill(0));
 
+        // Hilfsfunktion: Weltkoordinaten -> Zellenindizes
         const pointToCell = (x: number, y: number): [number, number] => {
             const col = Math.floor((x - minX) * resolution);
             const row = Math.floor((y - minY) * resolution);
@@ -73,15 +74,16 @@ export class LineDetection {
             ];
         };
 
-        const stepSize = 0.5 / resolution;
+        const stepSize = 0.5 / resolution; // Abtastschritt für gerade Linien
 
-        const rasterizeLine = (x1: number, y1: number, x2: number, y2: number) => {
+        // Rasterisierungsfunktion für eine Linie von (x1,y1) nach (x2,y2) mit Clip-Grenzen
+        const rasterizeLine = (x1: number, y1: number, x2: number, y2: number, clipMinY: number, clipMaxY: number) => {
             const dist = Math.hypot(x2 - x1, y2 - y1);
             if (dist === 0) {
-                const [row, col] = pointToCell(x1, y1);
-                if (density[row] !== undefined) {
-                    if (density[row][col] !== undefined) {
-                        density[row]![col] += 1;
+                if (y1 >= clipMinY && y1 <= clipMaxY) {
+                    const [row, col] = pointToCell(x1, y1);
+                    if (density[row] && density[row][col] !== undefined) {
+                        density[row][col] += 1;
                     }
                 }
                 return;
@@ -91,16 +93,15 @@ export class LineDetection {
                 const t = i / numSteps;
                 const x = x1 + (x2 - x1) * t;
                 const y = y1 + (y2 - y1) * t;
+                if (y < clipMinY || y > clipMaxY) continue;
                 const [row, col] = pointToCell(x, y);
-                if (density[row] !== undefined) {
-                    if (density[row][col] !== undefined) {
-                        density[row]![col] += 1;
-                    }
+                if (density[row] && density[row][col] !== undefined) {
+                    density[row][col] += 1;
                 }
             }
         };
 
-        // Auswertung einer kubischen Bezier-Kurve (bleibt unverändert)
+        // Hilfsfunktion für Kubische Bezier-Kurven
         const evaluateCubicBezier = (p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point => {
             const mt = 1 - t;
             const x = mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x;
@@ -108,51 +109,65 @@ export class LineDetection {
             return { x, y, t: 0 };
         };
 
-        // Alle Striche verarbeiten (unverändert, nur Aufrufe von rasterizeLine sind jetzt korrigiert)
+        // 2. Jeden Strich einzeln verarbeiten (mit eigenem Clip-Bereich)
         for (const stroke of strokes) {
+            // Alle Punkte des Strichs sammeln (für Min/Max-Berechnung und Rasterung)
+            const strokePoints: Point[] = [];
+
             if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
+                // Bezier-Kurven abtasten
                 for (const curve of stroke.bezierCurves) {
                     const bezier = curve as any;
                     const p0 = bezier.p0 ?? bezier.start;
                     const p1 = bezier.p1 ?? bezier.control1;
                     const p2 = bezier.p2 ?? bezier.control2;
                     const p3 = bezier.p3 ?? bezier.end;
-
                     if (p0 && p1 && p2 && p3) {
-                        const numSegments = 20;
-                        const points: Point[] = [];
+                        const numSegments = 20; // Abtastrate für Kurven
                         for (let i = 0; i <= numSegments; i++) {
                             const t = i / numSegments;
-                            points.push(evaluateCubicBezier(p0, p1, p2, p3, t));
-                        }
-                        for (let i = 0; i < points.length - 1; i++) {
-                            if (points[i] && points[i + 1])
-                                rasterizeLine(points[i]!.x, points[i]!.y, points[i + 1]!.x, points[i + 1]!.y);
+                            strokePoints.push(evaluateCubicBezier(p0, p1, p2, p3, t));
                         }
                     } else {
+                        // Fallback: originale Punkte
                         console.warn("CubicBezier-Struktur unbekannt – verwende originale Punkte");
-                        const pts = stroke.points;
-                        for (let i = 0; i < pts.length - 1; i++) {
-                            if (pts[i] && pts[i + 1])
-                                rasterizeLine(pts[i]!.x, pts[i]!.y, pts[i + 1]!.x, pts[i + 1]!.y);
-                        }
+                        strokePoints.push(...stroke.points);
                     }
                 }
             } else {
-                const pts = stroke.points;
-                for (let i = 0; i < pts.length - 1; i++) {
-                    if (pts[i] && pts[i + 1])
-                        rasterizeLine(pts[i]!.x, pts[i]!.y, pts[i + 1]!.x, pts[i + 1]!.y);
-                }
+                // Keine Bezier-Kurven: originale Punkte verwenden
+                strokePoints.push(...stroke.points);
+            }
+
+            if (strokePoints.length === 0) continue;
+
+            // Minimales und maximales y für diesen Strich
+            let strokeMinY = Infinity, strokeMaxY = -Infinity;
+            for (const p of strokePoints) {
+                strokeMinY = Math.min(strokeMinY, p.y);
+                strokeMaxY = Math.max(strokeMaxY, p.y);
+            }
+
+            // Clip-Bereich: mittlere includePercent % der Strichhöhe
+            const strokeHeight = strokeMaxY - strokeMinY;
+            const keepMinY = strokeMinY + strokeHeight * ((100 - includePercent) / 200);
+            const keepMaxY = strokeMaxY - strokeHeight * ((100 - includePercent) / 200);
+
+            // Liniensegmente zwischen aufeinanderfolgenden Punkten rasterisieren
+            for (let i = 0; i < strokePoints.length - 1; i++) {
+                const p1 = strokePoints[i];
+                const p2 = strokePoints[i + 1];
+                if (p1 && p2)
+                rasterizeLine(p1.x, p1.y, p2.x, p2.y, keepMinY, keepMaxY);
             }
         }
 
-        // Horizontale Verwischung
+        // 3. Horizontale Dilatation (optional)
         if (horizontalMergeRadius > 0) {
             density = this.dilateHorizontal(density, horizontalMergeRadius);
         }
 
-        // Dichtewert reduzierung
+        // 4. Dichte subtrahieren (optional)
         if (densitySubtract > 0) {
             for (let y = 0; y < density.length; y++) {
                 const row = density[y];

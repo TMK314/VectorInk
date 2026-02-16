@@ -29,14 +29,16 @@ export class DigitalizationManager {
                 const resolution = 10 * 0.01; // experimentell
                 const horizontalMergeWorldDistance = 80; // experimentell, je nach Schriftgröße anpassen
                 const horizontalMergeRadius = Math.ceil(horizontalMergeWorldDistance * resolution);
-                const densitySubstract = 2;                
+                const densitySubstract = 2;
+                const includePercent = 50;
                 const lineDetection = new LineDetection();
 
                 const bitmapResult = lineDetection.createBitmapFromStrokes(
                     blockStrokes,
                     resolution,
-                    horizontalMergeRadius,   // jetzt mit Filter
-                    densitySubstract
+                    horizontalMergeRadius,
+                    densitySubstract,
+                    includePercent
                 );
                 const bitmap = bitmapResult.density;
 
