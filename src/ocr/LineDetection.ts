@@ -26,6 +26,12 @@ export interface BitmapResult {
     maxY: number;
 }
 
+interface PixelPath {
+    pixels: [number, number][]; // [col, row]
+    cost: number;
+    startY: number;
+}
+
 export class LineDetection {
     /*
     Schritt 1
@@ -196,7 +202,8 @@ export class LineDetection {
         minGapRows: number = 3,
         costPerStep: number = 1,
         densityWeight: number = 1,
-        startRowCandidates?: number[]
+        startRowCandidates?: number[],
+        groupTolerance: number = 2
     ): PathResult[] {
         const height = density.length;
         if (height === 0) return [];
@@ -253,23 +260,31 @@ export class LineDetection {
             startCandidates = [...new Set([...gapCandidates, ...uniformCandidates])].sort((a, b) => a - b);
         }
 
-        const paths: PathResult[] = [];
+        const pixelPaths: PixelPath[] = [];
 
         for (const startY of startCandidates) {
             const path = this.aStarSearch(density, startY, width, height, costPerStep, densityWeight);
             if (path) {
-                const worldPoints: Point[] = path.map(([col, row]) => ({
-                    x: minX + (col + 0.5) / resolution,
-                    y: minY + (row + 0.5) / resolution,
-                    t: 0
-                }));
                 const cost = this.calculatePathCost(density, path, costPerStep, densityWeight);
-                paths.push({ points: worldPoints, cost, startY });
+                pixelPaths.push({ pixels: path, cost, startY });
             }
         }
 
-        const groupedPaths = this.groupSimilarPaths(paths, 2);
-        return groupedPaths;
+        // Gruppieren nach mittlerer y-Koordinate
+        const bestPixelPaths = this.groupSimilarPathsByMidY(pixelPaths, width, groupTolerance);
+
+        // In Weltkoordinaten umwandeln
+        const paths: PathResult[] = bestPixelPaths.map(p => ({
+            points: p.pixels.map(([col, row]) => ({
+                x: minX + (col + 0.5) / resolution,
+                y: minY + (row + 0.5) / resolution,
+                t: 0
+            })),
+            cost: p.cost,
+            startY: p.startY
+        }));
+
+        return paths;
     }
 
     /**
@@ -435,5 +450,46 @@ export class LineDetection {
         groups.push(currentGroup);
 
         return groups.map(group => group.reduce((best, current) => current.cost < best.cost ? current : best));
+    }
+
+    private groupSimilarPathsByMidY(
+        paths: PixelPath[],
+        width: number,
+        tolerance: number
+    ): PixelPath[] {
+        if (paths.length === 0) return [];
+
+        // mittlere y-Koordinate berechnen (bei der Hälfte der x‑Spanne)
+        const pathsWithMidY = paths.map(p => {
+            const midIndex = Math.floor(p.pixels.length / 2);
+            const midY = p.pixels[midIndex]?.[1] ?? p.startY; // Fallback
+            return { ...p, midY };
+        });
+
+        // nach midY sortieren
+        pathsWithMidY.sort((a, b) => a.midY - b.midY);
+
+        // Gruppen bilden (aufsteigend, Differenz zum Vorgänger)
+        const groups: PixelPath[][] = [];
+        if (pathsWithMidY[0] === undefined) return []; 
+        let currentGroup: PixelPath[] = [pathsWithMidY[0]];
+
+        for (let i = 1; i < pathsWithMidY.length; i++) {
+            const prev = pathsWithMidY[i - 1];
+            const curr = pathsWithMidY[i];
+            if (curr && prev)
+            if (curr.midY - prev.midY <= tolerance) {
+                currentGroup.push(curr);
+            } else {
+                groups.push(currentGroup);
+                currentGroup = [curr];
+            }
+        }
+        groups.push(currentGroup);
+
+        // je Gruppe den Pfad mit minimalen Kosten auswählen
+        return groups.map(group =>
+            group.reduce((best, curr) => curr.cost < best.cost ? curr : best)
+        );
     }
 }

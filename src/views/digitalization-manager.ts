@@ -59,7 +59,8 @@ export class DigitalizationManager {
                     2,       // minGapRows
                     0.01,       // costPerStep
                     0.5,      // densityWeight – reduziert, um auch schräge Pfade zu ermöglichen
-                    startRowCandidates
+                    startRowCandidates,
+                    5
                 );
 
                 // Pfade zeichnen (verschiedene Farben für verschiedene Pfade)
