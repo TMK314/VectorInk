@@ -26,15 +26,17 @@ export class DigitalizationManager {
                     .map(id => this.context.document!.getStroke(id))
                     .filter((s): s is Stroke => s !== undefined);
 
-                const resolution = 7.5 * 0.01; // experimentell
-                const horizontalMergeWorldDistance = 50; // experimentell, je nach Schriftgröße anpassen
+                const resolution = 10 * 0.01; // experimentell
+                const horizontalMergeWorldDistance = 80; // experimentell, je nach Schriftgröße anpassen
                 const horizontalMergeRadius = Math.ceil(horizontalMergeWorldDistance * resolution);
+                const densitySubstract = 2;                
                 const lineDetection = new LineDetection();
 
                 const bitmapResult = lineDetection.createBitmapFromStrokes(
                     blockStrokes,
                     resolution,
-                    horizontalMergeRadius   // jetzt mit Filter
+                    horizontalMergeRadius,   // jetzt mit Filter
+                    densitySubstract
                 );
                 const bitmap = bitmapResult.density;
 
@@ -49,18 +51,24 @@ export class DigitalizationManager {
                     gapThreshold
                 );
 
+                const thresholdFactor = 0.002;
+                const minGapRows = 2;
+                const costPerStep = 0.01;
+                const densityWeight =  0.5;
+                const groupTolerance = 5;
+
                 // Trennlinien-Pfade finden
                 const paths = lineDetection.findSeparatorPaths(
                     bitmap,
-                    bitmapResult.minX,          // ← jetzt korrekte Werte
+                    bitmapResult.minX,
                     bitmapResult.minY,
                     resolution,
-                    0.002,   // thresholdFactor
-                    2,       // minGapRows
-                    0.01,       // costPerStep
-                    0.5,      // densityWeight – reduziert, um auch schräge Pfade zu ermöglichen
+                    thresholdFactor,
+                    minGapRows,
+                    costPerStep,
+                    densityWeight,
                     startRowCandidates,
-                    5
+                    groupTolerance
                 );
 
                 // Pfade zeichnen (verschiedene Farben für verschiedene Pfade)

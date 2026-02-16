@@ -39,7 +39,8 @@ export class LineDetection {
     */
     public createBitmapFromStrokes(strokes: Stroke[],
         resolution: number,
-        horizontalMergeRadius: number = 0
+        horizontalMergeRadius: number = 0,
+        densitySubtract: number = 0
     ): BitmapResult {
         // 1. Bounding Box aller Striche berechnen
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -145,9 +146,24 @@ export class LineDetection {
                 }
             }
         }
+
+        // Horizontale Verwischung
         if (horizontalMergeRadius > 0) {
             density = this.dilateHorizontal(density, horizontalMergeRadius);
         }
+
+        // Dichtewert reduzierung
+        if (densitySubtract > 0) {
+            for (let y = 0; y < density.length; y++) {
+                const row = density[y];
+                if (!row) continue;
+                for (let x = 0; x < row.length; x++) {
+                    if (row[x] === undefined) continue;
+                    row[x] = Math.max(0, row[x]! - densitySubtract);
+                }
+            }
+        }
+
         return { density, minX, minY, maxX, maxY };
     }
 
@@ -191,6 +207,8 @@ export class LineDetection {
      * @param minGapRows - Mindesthöhe einer Lücke in Bitmap-Zeilen (default 3)
      * @param costPerStep - Basiskosten pro Schritt (default 1)
      * @param densityWeight - Gewichtung der Zelldichte in den Kosten (default 1)
+     * @param startRowCandidates
+     * @param groupTolerance
      * @returns Array von Pfaden (jeweils Punkte in Weltkoordinaten)
      */
     public findSeparatorPaths(
@@ -271,7 +289,7 @@ export class LineDetection {
         }
 
         // Gruppieren nach mittlerer y-Koordinate
-        const bestPixelPaths = this.groupSimilarPathsByMidY(pixelPaths, width, groupTolerance);
+        const bestPixelPaths = this.groupSimilarPathsByMidY(pixelPaths, groupTolerance);
 
         // In Weltkoordinaten umwandeln
         const paths: PathResult[] = bestPixelPaths.map(p => ({
@@ -428,33 +446,17 @@ export class LineDetection {
         return cost;
     }
 
-    private groupSimilarPaths(paths: PathResult[], tolerance: number): PathResult[] {
-        if (paths.length === 0) return [];
-
-        const sorted = [...paths].sort((a, b) => a.startY - b.startY);
-        const groups: PathResult[][] = [];
-        if (sorted[0] === undefined) return [];
-        let currentGroup: PathResult[] = [sorted[0]];
-
-        for (let i = 1; i < sorted.length; i++) {
-            if (currentGroup[currentGroup.length - 1] === undefined) continue;
-            const lastStartY = currentGroup[currentGroup.length - 1]!.startY;
-            if (sorted[i] === undefined) continue;
-            if (Math.abs(sorted[i]!.startY - lastStartY) <= tolerance) {
-                currentGroup.push(sorted[i]!);
-            } else {
-                groups.push(currentGroup);
-                currentGroup = [sorted[i]!];
-            }
-        }
-        groups.push(currentGroup);
-
-        return groups.map(group => group.reduce((best, current) => current.cost < best.cost ? current : best));
-    }
-
+    /**
+     * Diese Methode vergleicht für jeden Pfad die y-Koordinate (in Pixeln) etwa in der Mitte des Pfades (bei Spalte width/2).
+     * Pfade, deren mittlere y‑Werte innerhalb einer Toleranz (groupTolerance) liegen, werden zu einer Gruppe zusammengefasst.
+     * Aus jeder Gruppe wird der kostengünstigste Pfad ausgewählt.
+     * 
+     * @param paths
+     * @param tolerance 
+     * @returns 
+     */
     private groupSimilarPathsByMidY(
         paths: PixelPath[],
-        width: number,
         tolerance: number
     ): PixelPath[] {
         if (paths.length === 0) return [];
@@ -471,19 +473,19 @@ export class LineDetection {
 
         // Gruppen bilden (aufsteigend, Differenz zum Vorgänger)
         const groups: PixelPath[][] = [];
-        if (pathsWithMidY[0] === undefined) return []; 
+        if (pathsWithMidY[0] === undefined) return [];
         let currentGroup: PixelPath[] = [pathsWithMidY[0]];
 
         for (let i = 1; i < pathsWithMidY.length; i++) {
             const prev = pathsWithMidY[i - 1];
             const curr = pathsWithMidY[i];
             if (curr && prev)
-            if (curr.midY - prev.midY <= tolerance) {
-                currentGroup.push(curr);
-            } else {
-                groups.push(currentGroup);
-                currentGroup = [curr];
-            }
+                if (curr.midY - prev.midY <= tolerance) {
+                    currentGroup.push(curr);
+                } else {
+                    groups.push(currentGroup);
+                    currentGroup = [curr];
+                }
         }
         groups.push(currentGroup);
 
