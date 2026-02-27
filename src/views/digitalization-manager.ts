@@ -26,18 +26,52 @@ export class DigitalizationManager {
                     .map(id => this.context.document!.getStroke(id))
                     .filter((s): s is Stroke => s !== undefined);
 
-                const resolution = 10 * 0.01; // experimentell
-                const horizontalMergeWorldDistance = 80; // experimentell, je nach Schriftgröße anpassen
+                if (blockStrokes.length === 0) continue;
+
+                // ----- 1. Schätze die typische Strichhöhe (Median) -----
+                const heights: number[] = [];
+                for (const stroke of blockStrokes) {
+                    if (stroke.points.length === 0) continue;
+                    let minY = Infinity, maxY = -Infinity;
+                    for (const p of stroke.points) {
+                        minY = Math.min(minY, p.y);
+                        maxY = Math.max(maxY, p.y);
+                    }
+                    heights.push(maxY - minY);
+                }
+                let medianStrokeHeight: number;
+                medianStrokeHeight = 1.0; // Fallback-Wert, falls keine Strichhöhe ermittelt werden kann
+                if (heights.length !== 0) {
+                    heights.sort((a, b) => a - b);
+                    const mid = Math.floor(heights.length / 2);
+                    if (heights[mid - 1] !== undefined && heights[mid] !== undefined) {
+                        medianStrokeHeight = heights.length % 2 === 0
+                            ? (heights[mid - 1]! + heights[mid]) / 2
+                            : heights[mid];
+                    }
+                }
+
+                // ----- 2. Auflösung so wählen, dass die Strichhöhe ca. 40 Pixel beträgt -----
+                const targetStrokeHeightPx = 2.5;          // experimentell, kann justiert werden
+
+                let resolution = targetStrokeHeightPx / medianStrokeHeight;
+                // Begrenzung, um extrem grobe oder feine Bitmaps zu vermeiden (optional)
+                resolution = Math.max(0.05, Math.min(0.5, resolution));
+
+                // ----- 3. Horizontale Merge-Distanz (z.B. 1.5× Strichhöhe) -----
+                const horizontalMergeWorldDistance = 2 * medianStrokeHeight;
                 const horizontalMergeRadius = Math.ceil(horizontalMergeWorldDistance * resolution);
-                const densitySubstract = 0;
-                const includePercent = 30;
+
+                const densitySubtract = 0;                 // kann bei Bedarf erhöht werden (z.B. 1)
+                const includePercent = 30;                 // Anteil des Strichs, der in der Bitmap bleibt
+
                 const lineDetection = new LineDetection();
 
                 const bitmapResult = lineDetection.createBitmapFromStrokes(
                     blockStrokes,
                     resolution,
                     horizontalMergeRadius,
-                    densitySubstract,
+                    densitySubtract,
                     includePercent
                 );
                 const bitmap = bitmapResult.density;
@@ -45,7 +79,8 @@ export class DigitalizationManager {
                 // Dichte-Bitmap zeichnen (optional)
                 this.context.drawBitmapForBlock(block, bitmap, resolution, bitmapResult.minX, bitmapResult.minY);
 
-                const gapThreshold = 0.2; // in Weltkoordinaten, je nach Schriftgröße anpassen
+                // ----- 4. Schwellwert für Zeilen-Clustering (z.B. 30% der Strichhöhe) -----
+                const gapThreshold = 0.005 * medianStrokeHeight;
                 const startRowCandidates = this.getSeparatorStartRowsFromStrokes(
                     blockStrokes,
                     bitmapResult.minY,
@@ -53,11 +88,21 @@ export class DigitalizationManager {
                     gapThreshold
                 );
 
-                const thresholdFactor = 0.002;
-                const minGapRows = 2;
-                const costPerStep = 0.01;
-                const densityWeight = 0.1;
-                const groupTolerance = 4;
+                /*this.drawStartRowCandidates(
+    block,
+    startRowCandidates,
+    bitmapResult.minX,
+    bitmapResult.maxX,
+    bitmapResult.minY,
+    resolution
+);*/
+
+                // ----- 5. Parameter für die A*-Pfadsuche (basieren jetzt auf Pixeln) -----
+                const thresholdFactor = 0.002;              // fest (für horizontale Projektion)
+                const minGapRows = Math.max(0.2, Math.floor(0.1 * targetStrokeHeightPx)); // ca. 4 Pixel
+                const costPerStep = 0.01;                   // fest (relativ zu densityWeight)
+                const densityWeight = 0.1;                   // fest
+                const groupTolerance = 4;                    // in Pixeln, ähnlich minGapRows
 
                 // Trennlinien-Pfade finden
                 const paths = lineDetection.findSeparatorPaths(
@@ -73,13 +118,12 @@ export class DigitalizationManager {
                     groupTolerance
                 );
 
-                // Pfade zeichnen (verschiedene Farben für verschiedene Pfade)
-                const colors = ['blue', 'green', 'orange', 'purple', 'red'];
-                paths.forEach((path, index) => {
+                // Pfade zeichnen (verschiedene Farben)
+                paths.forEach((path) => {
                     this.context.drawPath(block, path.points, 'blue', true);
                 });
 
-                // Markdown-Inhalt generieren (unverändert)
+                // Markdown-Inhalt generieren
                 const blockContent = this.digitalizeBlock(block);
                 if (blockContent) {
                     markdownContent += blockContent + '\n\n';
@@ -481,4 +525,32 @@ export class DigitalizationManager {
 
         return groupedRows;
     }
+
+    /**
+ * Zeichnet horizontale Linien an den Positionen der Startkandidaten (Bitmap-Zeilen).
+ * @param block - Der aktuelle Block
+ * @param candidates - Array von Zeilenindizes (in Bitmap-Koordinaten)
+ * @param minX - Minimale x-Koordinate der Block-Bounding-Box (Welt)
+ * @param maxX - Maximale x-Koordinate der Block-Bounding-Box (Welt)
+ * @param minY - Minimale y-Koordinate der Block-Bounding-Box (Welt)
+ * @param resolution - Auflösung der Bitmap (Pixel pro Welteinheit)
+ */
+private drawStartRowCandidates(
+    block: Block,
+    candidates: number[],
+    minX: number,
+    maxX: number,
+    minY: number,
+    resolution: number
+) {
+    if (!this.context || candidates.length === 0) return;
+    for (const row of candidates) {
+        // Mitte der Bitmap-Zelle in Weltkoordinaten
+        const y = minY + (row + 0.5) / resolution;
+        const startPoint = { x: minX, y, t: 0 };
+        const endPoint = { x: maxX, y, t: 0 };
+        // Farbe z.B. 'magenta' – kann nach Bedarf geändert werden
+        this.context.drawPath(block, [startPoint, endPoint], 'magenta', true);
+    }
+}
 }
