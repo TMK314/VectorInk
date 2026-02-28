@@ -1,15 +1,16 @@
-import { App, PluginSettingTab, Setting, TextComponent } from "obsidian";
+import { App, Plugin } from "obsidian";
+import { PluginSettingTab, Setting, TextComponent } from "obsidian";
 import VectorInkPlugin from "./main";
 
 export interface VectorInkSettings {
-	mySetting: string;
+	pythonPath: string;
 }
 
 export const DEFAULT_SETTINGS: VectorInkSettings = {
-	mySetting: "default",
+	pythonPath: "python"
 };
 
-export class SampleSettingTab extends PluginSettingTab {
+export class VectorInkSettingTab extends PluginSettingTab {
 	plugin: VectorInkPlugin;
 
 	constructor(app: App, plugin: VectorInkPlugin) {
@@ -21,17 +22,19 @@ export class SampleSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		containerEl.createEl("h2", { text: "VectorInk Settings" });
+
 		new Setting(containerEl)
-			.setName("Settings #1")
-			.setDesc("It's a secret")
-			.addText((text: TextComponent) => {
+			.setName("Python executable path")
+			.setDesc("Absolute path to Python 3.11 (or leave 'python' for PATH lookup)")
+			.addText((text) =>
 				text
-					.setPlaceholder("Enter your secret")
-					.setValue(this.plugin.settings.mySetting)
+					.setPlaceholder("C:\\Path\\To\\python.exe")
+					.setValue(this.plugin.settings.pythonPath)
 					.onChange(async (value: string) => {
-						this.plugin.settings.mySetting = value;
+						this.plugin.settings.pythonPath = value;
 						await this.plugin.saveSettings();
-					});
-			});
+					})
+			);
 	}
 }

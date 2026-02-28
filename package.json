@@ -8,11 +8,14 @@
     "build": "node esbuild.config.mjs production"
   },
   "devDependencies": {
-    "@types/node": "^16.11.6",
+    "@types/node": "^16.18.126",
     "builtin-modules": "^3.2.0",
     "esbuild": "^0.17.19",
-    "obsidian": "^1.11.4",
+    "obsidian": "^1.12.3",
     "tslib": "^2.4.0",
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "canvas": "^3.2.1"
   }
 }

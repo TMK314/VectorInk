@@ -1,9 +1,13 @@
 import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
+import { VectorInkSettings, DEFAULT_SETTINGS, VectorInkSettingTab } from './settings';
 
 export default class VectorInkPlugin extends Plugin {
+	settings!: VectorInkSettings;
 	async onload() {
 		console.log('🔧 Loading Vector Ink Plugin');
+
+		await this.loadSettings();
 
 		this.registerView(
 			INK_VIEW_TYPE,
@@ -11,6 +15,8 @@ export default class VectorInkPlugin extends Plugin {
 		);
 
 		this.registerExtensions(['ink'], INK_VIEW_TYPE);
+
+		this.addSettingTab(new VectorInkSettingTab(this.app, this));
 
 		this.addRibbonIcon('pencil', 'Create Ink Note', () => {
 			this.createInkNote();
@@ -182,6 +188,18 @@ export default class VectorInkPlugin extends Plugin {
 				new Notice('Failed to create ink note');
 			}
 		}
+	}
+
+	async loadSettings() {
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
 	}
 
 	onunload() {

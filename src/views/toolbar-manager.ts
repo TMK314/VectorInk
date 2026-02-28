@@ -583,7 +583,7 @@ export class ToolbarManager {
     public updateBlockMargins(): void {
         if (!this.context.blocksContainer) return;
 
-        const blocks = this.context.blocksContainer.querySelectorAll('.ink-block');
+        const blocks = this.context.blocksContainer.querySelectorAll<HTMLElement>('.ink-block');
         blocks.forEach((block: HTMLElement, index) => {
             const isSelected = index === this.context.currentBlockIndex;
             const marginTop = isSelected ?
