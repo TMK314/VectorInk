@@ -91,11 +91,16 @@ export class DigitalizationManager {
     private async digitalizeBlockWithOCR(block: Block): Promise<string> {
         try {
             const { imagePath, minX, minY, padding } = await this.renderBlockToImage(block);
+            console.log(`[VectorInk] PNG gespeichert: ${imagePath}`);
             const ocrResults = await this.runOCR(imagePath);
-            fs.unlinkSync(imagePath); // Temporäre Datei löschen
+            // PNG für Debugging behalten
+            // fs.unlinkSync(imagePath);
+
+            console.log(`[VectorInk] OCR-Ergebnis (${ocrResults.length} Eintraege):`, JSON.stringify(ocrResults));
 
             if (ocrResults.length === 0) {
-                return ''; // Nichts erkannt
+                console.warn(`[VectorInk] Leeres OCR-Ergebnis fuer Block ${block.id}. PNG: ${imagePath}`);
+                return '';
             }
 
             const strokes = block.strokeIds
@@ -273,23 +278,39 @@ export class DigitalizationManager {
         ctx.fillRect(0, 0, width, height);
 
         for (const stroke of strokes) {
-            ctx.beginPath();
-            ctx.strokeStyle = stroke.style.color;
-            ctx.lineWidth = stroke.style.width;
-            if (stroke.style.opacity !== undefined) {
-                ctx.globalAlpha = stroke.style.opacity;
+            ctx.strokeStyle = stroke.style.color === '#ffffff' ? '#000000' : stroke.style.color;
+            ctx.lineWidth = Math.max(stroke.style.width * 2.5, 3.0); // Für OCR verdickt
+            ctx.globalAlpha = stroke.style.opacity !== undefined ? stroke.style.opacity : 1.0;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
+                // Bézier-Kurven verwenden (gleiche Logik wie DrawingManager.drawBezierStroke)
+                for (const bezier of stroke.bezierCurves) {
+                    ctx.beginPath();
+                    ctx.moveTo(bezier.p0.x - minX + padding, bezier.p0.y - minY + padding);
+                    ctx.bezierCurveTo(
+                        bezier.p1.x - minX + padding, bezier.p1.y - minY + padding,
+                        bezier.p2.x - minX + padding, bezier.p2.y - minY + padding,
+                        bezier.p3.x - minX + padding, bezier.p3.y - minY + padding
+                    );
+                    ctx.stroke();
+                }
+            } else {
+                // Fallback: gerade Linien
+                const first = stroke.points[0];
+                if (!first) continue;
+                ctx.beginPath();
+                ctx.moveTo(first.x - minX + padding, first.y - minY + padding);
+                for (let i = 1; i < stroke.points.length; i++) {
+                    const p = stroke.points[i];
+                    if (!p) continue;
+                    ctx.lineTo(p.x - minX + padding, p.y - minY + padding);
+                }
+                ctx.stroke();
             }
 
-            const first = stroke.points[0];
-            if (!first) continue;
-            ctx.moveTo(first.x - minX + padding, first.y - minY + padding);
-
-            for (let i = 1; i < stroke.points.length; i++) {
-                const p = stroke.points[i];
-                if (!p) continue;
-                ctx.lineTo(p.x - minX + padding, p.y - minY + padding);
-            }
-            ctx.stroke();
+            ctx.globalAlpha = 1.0;
         }
 
         const tempDir = os.tmpdir();

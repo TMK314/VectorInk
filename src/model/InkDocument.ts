@@ -188,6 +188,7 @@ export class InkDocument {
             const updatedStroke: Stroke = {
                 id: strokeId,
                 points: updates.points ?? originalStroke.points,
+                bezierCurves: updates.bezierCurves ?? originalStroke.bezierCurves,
                 style: updates.style ?? originalStroke.style,
                 createdAt: updates.createdAt ?? originalStroke.createdAt,
             };
