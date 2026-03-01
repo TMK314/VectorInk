@@ -90,7 +90,7 @@ export class DigitalizationManager {
      */
     private async digitalizeBlockWithOCR(block: Block): Promise<string> {
         try {
-            const { imagePath, minX, minY, padding } = await this.renderBlockToImage(block);
+            const { imagePath, minX, minY, padding, scale } = await this.renderBlockToImage(block);
             console.log(`[VectorInk] PNG gespeichert: ${imagePath}`);
             const ocrResults = await this.runOCR(imagePath);
             // PNG für Debugging behalten
@@ -117,10 +117,10 @@ export class DigitalizationManager {
                 const minYpx = Math.min(...ys);
                 const maxYpx = Math.max(...ys);
 
-                const worldMinX = minXpx + minX - padding;
-                const worldMaxX = maxXpx + minX - padding;
-                const worldMinY = minYpx + minY - padding;
-                const worldMaxY = maxYpx + minY - padding;
+                const worldMinX = (minXpx - padding) / scale + minX;
+                const worldMaxX = (maxXpx - padding) / scale + minX;
+                const worldMinY = (minYpx - padding) / scale + minY;
+                const worldMaxY = (maxYpx - padding) / scale + minY;
 
                 return {
                     text: item.text,
@@ -245,7 +245,7 @@ export class DigitalizationManager {
     /**
      * Rendert die Strokes eines Blocks als PNG und speichert es temporär.
      */
-    private async renderBlockToImage(block: Block): Promise<{ imagePath: string; minX: number; minY: number; padding: number }> {
+    private async renderBlockToImage(block: Block): Promise<{ imagePath: string; minX: number; minY: number; padding: number; scale: number }> {
         if (!this.context.document) throw new Error('No document');
 
         const strokes = block.strokeIds
@@ -264,9 +264,29 @@ export class DigitalizationManager {
             }
         }
 
-        const padding = 20;
-        const width = Math.ceil(maxX - minX) + 2 * padding;
-        const height = Math.ceil(maxY - minY) + 2 * padding;
+        // Schätze durchschnittliche Zeilenhöhe anhand der Stroke-Bounding-Boxes
+        // Ziel: ~80px pro Textzeile für optimale OCR-Erkennung
+        const TARGET_LINE_HEIGHT_PX = 50;
+        const strokeHeights: number[] = strokes.map(stroke => {
+            let sMinY = Infinity, sMaxY = -Infinity;
+            for (const p of stroke.points) {
+                sMinY = Math.min(sMinY, p.y);
+                sMaxY = Math.max(sMaxY, p.y);
+            }
+            return sMaxY - sMinY;
+        }).filter(h => h > 2);
+
+        strokeHeights.sort((a, b) => a - b);
+        const medianStrokeHeight = strokeHeights.length > 0
+            ? strokeHeights[Math.floor(strokeHeights.length / 2)]
+            : 20;
+
+        const scale = Math.min(2.0, Math.max(1.0, TARGET_LINE_HEIGHT_PX / medianStrokeHeight));
+        console.log(`[VectorInk] medianStrokeHeight=${medianStrokeHeight.toFixed(1)}px → scale=${scale.toFixed(2)}x`);
+
+        const padding = Math.round(20 * scale);
+        const width = Math.ceil((maxX - minX) * scale) + 2 * padding;
+        const height = Math.ceil((maxY - minY) * scale) + 2 * padding;
 
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -279,33 +299,32 @@ export class DigitalizationManager {
 
         for (const stroke of strokes) {
             ctx.strokeStyle = stroke.style.color === '#ffffff' ? '#000000' : stroke.style.color;
-            ctx.lineWidth = Math.max(stroke.style.width * 2.5, 3.0); // Für OCR verdickt
+            // Mindestens 4px für OCR – dünne Handschrift sonst nicht detektierbar
+            ctx.lineWidth = Math.max(stroke.style.width * scale * 3.5, 4.0);
             ctx.globalAlpha = stroke.style.opacity !== undefined ? stroke.style.opacity : 1.0;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
             if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
-                // Bézier-Kurven verwenden (gleiche Logik wie DrawingManager.drawBezierStroke)
                 for (const bezier of stroke.bezierCurves) {
                     ctx.beginPath();
-                    ctx.moveTo(bezier.p0.x - minX + padding, bezier.p0.y - minY + padding);
+                    ctx.moveTo((bezier.p0.x - minX) * scale + padding, (bezier.p0.y - minY) * scale + padding);
                     ctx.bezierCurveTo(
-                        bezier.p1.x - minX + padding, bezier.p1.y - minY + padding,
-                        bezier.p2.x - minX + padding, bezier.p2.y - minY + padding,
-                        bezier.p3.x - minX + padding, bezier.p3.y - minY + padding
+                        (bezier.p1.x - minX) * scale + padding, (bezier.p1.y - minY) * scale + padding,
+                        (bezier.p2.x - minX) * scale + padding, (bezier.p2.y - minY) * scale + padding,
+                        (bezier.p3.x - minX) * scale + padding, (bezier.p3.y - minY) * scale + padding
                     );
                     ctx.stroke();
                 }
             } else {
-                // Fallback: gerade Linien
                 const first = stroke.points[0];
                 if (!first) continue;
                 ctx.beginPath();
-                ctx.moveTo(first.x - minX + padding, first.y - minY + padding);
+                ctx.moveTo((first.x - minX) * scale + padding, (first.y - minY) * scale + padding);
                 for (let i = 1; i < stroke.points.length; i++) {
                     const p = stroke.points[i];
                     if (!p) continue;
-                    ctx.lineTo(p.x - minX + padding, p.y - minY + padding);
+                    ctx.lineTo((p.x - minX) * scale + padding, (p.y - minY) * scale + padding);
                 }
                 ctx.stroke();
             }
@@ -327,7 +346,7 @@ export class DigitalizationManager {
         const buffer = Buffer.from(await blob.arrayBuffer());
         fs.writeFileSync(tempPath, buffer);
 
-        return { imagePath: tempPath, minX, minY, padding };
+        return { imagePath: tempPath, minX, minY, padding, scale };
     }
 
     /**
