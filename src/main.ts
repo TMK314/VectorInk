@@ -1,6 +1,7 @@
-import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, TFile, MarkdownPostProcessorContext } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
 import { VectorInkSettings, DEFAULT_SETTINGS, VectorInkSettingTab } from './settings';
+import { InkEmbedRenderer } from './views/InkEmbedRenderer';
 
 export default class VectorInkPlugin extends Plugin {
 	settings!: VectorInkSettings;
@@ -15,6 +16,36 @@ export default class VectorInkPlugin extends Plugin {
 		);
 
 		this.registerExtensions(['ink'], INK_VIEW_TYPE);
+
+		// Markdown Post-Processor: ![[datei.ink]] eingebettet rendern
+		this.registerMarkdownPostProcessor(
+			async (element: HTMLElement, context: MarkdownPostProcessorContext) => {
+				// Obsidian rendert ![[...]] als .internal-embed Elemente
+				const embeds = element.querySelectorAll<HTMLElement>(
+					'.internal-embed[src$=".ink"]'
+				);
+
+				for (const embedEl of Array.from(embeds)) {
+					const src = embedEl.getAttribute('src');
+					if (!src) continue;
+
+					// Datei über den Vault auflösen (relativ zum aktuellen Dokument)
+					const sourcePath = context.sourcePath;
+					const inkFile = this.app.metadataCache.getFirstLinkpathDest(src, sourcePath);
+
+					if (!inkFile || !(inkFile instanceof TFile)) {
+						embedEl.createEl('p', {
+							cls: 'ink-embed-error',
+							text: `⚠ Ink file not found: ${src}`,
+						});
+						continue;
+					}
+
+					const renderer = new InkEmbedRenderer(this, embedEl, inkFile);
+					await renderer.render();
+				}
+			}
+		);
 
 		this.addSettingTab(new VectorInkSettingTab(this.app, this));
 
@@ -32,22 +63,6 @@ export default class VectorInkPlugin extends Plugin {
 			id: 'create-test-document',
 			name: 'Create Test Document',
 			callback: () => this.createTestDocument()
-		});
-
-		this.addCommand({
-			id: 'digitalize-current',
-			name: 'Digitalize Current Ink Document',
-			callback: () => {
-				const leaf = this.app.workspace.getLeaf(false);
-
-				const view = (leaf as unknown as { view?: unknown })?.view;
-
-				if (view instanceof InkView) {
-					//view.digitalizeCurrentDocument();
-				} else {
-					new Notice('No active ink document found');
-				}
-			}
 		});
 
 		console.log('✅ Vector Ink Plugin loaded');

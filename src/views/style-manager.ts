@@ -29,7 +29,6 @@ export class StyleManager {
             case 'heading5': baseWidth = 2.5; break;
             case 'quote': baseWidth = 2.0; break;
             case 'math': baseWidth = 2.5; break;
-            case 'table': baseWidth = 2.0; break;
             default: baseWidth = 2.0; break;
         }
 

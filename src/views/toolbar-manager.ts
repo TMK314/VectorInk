@@ -12,12 +12,6 @@ export class ToolbarManager {
     public blockMargins: { top: number; bottom: number } = { top: 8, bottom: 8 };
     public useColorForStyling = true;
 
-    // Tabellen-Tools
-    private tableModeContainer: HTMLElement | null = null;
-    private tableToolsContainer: HTMLElement | null = null;
-    private tableModeIndicator: HTMLElement | null = null;
-    private currentTableMode: 'vertical-line' | 'horizontal-line' | 'merge-cells' | null = null;
-
     // Grid controls
     private gridContainer: HTMLElement | null = null;
     private gridEnabledCheckbox: HTMLInputElement | null = null;
@@ -48,15 +42,12 @@ export class ToolbarManager {
         this.toolbar.appendChild(this.createSeparator());
         this.toolbar.appendChild(this.createToolbarButton('✏️', 'Pen', () => {
             this.context.drawingManager.setTool('pen');
-            this.setTableMode(null); // Tabellenmodus verlassen
         }));
         this.toolbar.appendChild(this.createToolbarButton('🧽', 'Eraser', () => {
             this.context.drawingManager.setTool('eraser');
-            this.setTableMode(null); // Tabellenmodus verlassen
         }));
         this.toolbar.appendChild(this.createToolbarButton('↖️', 'Select', () => {
             this.context.drawingManager.setTool('selection');
-            this.setTableMode(null); // Tabellenmodus verlassen
         }));
 
         // Grid controls section
@@ -360,53 +351,6 @@ export class ToolbarManager {
 
         this.toolbar.appendChild(marginContainer);
 
-        // Tabellen-Tools Section
-        this.toolbar.appendChild(this.createSeparator());
-
-        this.tableToolsContainer = document.createElement('div');
-        this.tableToolsContainer.style.display = 'flex';
-        this.tableToolsContainer.style.gap = '5px';
-        this.tableToolsContainer.style.alignItems = 'center';
-        this.tableToolsContainer.style.display = 'none'; // Initially hidden
-
-        const tableToolsLabel = document.createElement('span');
-        tableToolsLabel.textContent = 'Table Tools:';
-        tableToolsLabel.style.fontSize = '12px';
-        this.tableToolsContainer.appendChild(tableToolsLabel);
-
-        // Tabellen-Tools Buttons
-        const verticalLineBtn = this.createTableToolButton('│ Add Vert', 'Add vertical line', () =>
-            this.setTableMode('vertical-line'));
-        const horizontalLineBtn = this.createTableToolButton('─ Add Horiz', 'Add horizontal line', () =>
-            this.setTableMode('horizontal-line'));
-        const mergeCellsBtn = this.createTableToolButton('⬌ Merge', 'Merge cells', () =>
-            this.setTableMode('merge-cells'));
-        const exitTableModeBtn = this.createTableToolButton('✕ Exit', 'Exit table mode', () =>
-            this.setTableMode(null));
-
-        this.tableToolsContainer.appendChild(verticalLineBtn);
-        this.tableToolsContainer.appendChild(horizontalLineBtn);
-        this.tableToolsContainer.appendChild(mergeCellsBtn);
-        this.tableToolsContainer.appendChild(exitTableModeBtn);
-
-        // Table mode indicator
-        this.tableModeIndicator = document.createElement('div');
-        this.tableModeIndicator.style.display = 'none';
-        this.tableModeIndicator.style.padding = '3px 8px';
-        this.tableModeIndicator.style.fontSize = '11px';
-        this.tableModeIndicator.style.background = 'var(--interactive-accent)';
-        this.tableModeIndicator.style.color = 'var(--text-on-accent)';
-        this.tableModeIndicator.style.borderRadius = '3px';
-        this.tableModeIndicator.style.marginLeft = '10px';
-        this.tableToolsContainer.appendChild(this.tableModeIndicator);
-
-        this.toolbar.appendChild(this.tableToolsContainer);
-
-        // Digitalize button
-        this.toolbar.appendChild(this.createSeparator());
-        const digitalizeBtn = this.createToolbarButton('⚡', 'Digitalize', () => this.context.digitalizationManager.digitalizeCurrentDocument());
-        this.toolbar.appendChild(digitalizeBtn);
-
         // Add block button
         this.toolbar.appendChild(this.createSeparator());
         const addBlockBtn = this.createToolbarButton('＋', 'Add Block', () => this.context.blockManager.addNewBlock('paragraph', this.context.blocks.length));
@@ -442,120 +386,6 @@ export class ToolbarManager {
         };
 
         return button;
-    }
-
-    private createTableToolButton(text: string, title: string, onClick: () => void): HTMLElement {
-        const button = document.createElement('button');
-        button.textContent = text;
-        button.title = title;
-        button.style.padding = '4px 8px';
-        button.style.fontSize = '11px';
-        button.style.border = '1px solid var(--background-modifier-border)';
-        button.style.borderRadius = '4px';
-        button.style.background = 'var(--interactive-normal)';
-        button.style.cursor = 'pointer';
-        button.style.color = 'var(--text-muted)';
-        button.onclick = (e) => {
-            e.stopPropagation();
-            onClick();
-        };
-
-        button.onmouseenter = () => {
-            button.style.background = 'var(--interactive-hover)';
-            button.style.color = 'var(--text-normal)';
-        };
-        button.onmouseleave = () => {
-            if (this.currentTableMode !== this.getModeFromButtonText(text)) {
-                button.style.background = 'var(--interactive-normal)';
-                button.style.color = 'var(--text-muted)';
-            }
-        };
-
-        return button;
-    }
-
-    private getModeFromButtonText(text: string): 'vertical-line' | 'horizontal-line' | 'merge-cells' | null {
-        if (text.includes('Vert')) return 'vertical-line';
-        if (text.includes('Horiz')) return 'horizontal-line';
-        if (text.includes('Merge')) return 'merge-cells';
-        return null;
-    }
-
-    public setTableMode(mode: 'vertical-line' | 'horizontal-line' | 'merge-cells' | null): void {
-        const currentBlock = this.context.blocks[this.context.currentBlockIndex];
-        if (!currentBlock || currentBlock.type !== 'table') {
-            if (mode) {
-                new Notice('Please select a table block first');
-                return;
-            }
-        }
-
-        this.currentTableMode = mode;
-
-        // Aktualisiere Button-Styles
-        if (this.tableToolsContainer) {
-            const buttons = this.tableToolsContainer.querySelectorAll('button');
-            buttons.forEach(btn => {
-                const btnMode = this.getModeFromButtonText(btn.textContent || '');
-                if (btnMode === mode && mode !== null) {
-                    btn.style.background = 'var(--interactive-accent)';
-                    btn.style.color = 'var(--text-on-accent)';
-                    btn.style.borderColor = 'var(--interactive-accent)';
-                } else {
-                    btn.style.background = 'var(--interactive-normal)';
-                    btn.style.color = 'var(--text-muted)';
-                    btn.style.borderColor = 'var(--background-modifier-border)';
-                }
-            });
-        }
-
-        // Aktualisiere Indicator
-        if (this.tableModeIndicator) {
-            if (mode) {
-                let modeText = '';
-                switch (mode) {
-                    case 'vertical-line': modeText = 'Adding Vertical Lines'; break;
-                    case 'horizontal-line': modeText = 'Adding Horizontal Lines'; break;
-                    case 'merge-cells': modeText = 'Merging Cells'; break;
-                }
-                this.tableModeIndicator.textContent = modeText;
-                this.tableModeIndicator.style.display = 'block';
-            } else {
-                this.tableModeIndicator.style.display = 'none';
-            }
-        }
-
-        // Benachrichtigung
-        if (mode === 'vertical-line') {
-            new Notice('Vertical line mode: Click to add lines, drag to move, select and press Delete to remove');
-        } else if (mode === 'horizontal-line') {
-            new Notice('Horizontal line mode: Click to add lines, drag to move, select and press Delete to remove');
-        } else if (mode === 'merge-cells') {
-            new Notice('Merge mode: Click two cells to merge them');
-        } else {
-            new Notice('Exited table edit mode');
-        }
-
-        // Render blocks neu für visuelles Feedback
-        this.context.blockManager.renderBlocks();
-    }
-
-    public getCurrentTableMode(): 'vertical-line' | 'horizontal-line' | 'merge-cells' | null {
-        return this.currentTableMode;
-    }
-
-    public updateTableToolsVisibility(): void {
-        const currentBlock = this.context.blocks[this.context.currentBlockIndex];
-        const isTableBlock = currentBlock && currentBlock.type === 'table';
-
-        if (this.tableToolsContainer) {
-            this.tableToolsContainer.style.display = isTableBlock ? 'flex' : 'none';
-        }
-
-        // Wenn kein Tabellenblock mehr ausgewählt ist, Tabellenmodus verlassen
-        if (!isTableBlock && this.currentTableMode) {
-            this.setTableMode(null);
-        }
     }
 
     private createToolbarButton(icon: string, title: string, onClick: () => void): HTMLElement {

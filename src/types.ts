@@ -29,7 +29,7 @@ export interface BoundingBox {
     height: number;
 }
 
-export type BlockType = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'quote' | 'math' | 'drawing' | 'table';
+export type BlockType = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'heading4' | 'heading5' | 'quote' | 'math' | 'drawing';
 
 export interface Block {
     id: string;
@@ -39,7 +39,6 @@ export interface Block {
     order: number;
     textContent?: string;
     textContentChanged?: boolean;
-    tableGrid?: TableGrid; // Optional, nur für Tabellenblöcke
 }
 
 export interface PageSettings {
@@ -73,61 +72,8 @@ export interface InkDocumentData {
     metadata: Record<string, any>;
 }
 
-export interface DigitizationResult {
-    markdown: string;
-    blocks: Block[];
-}
-
-// Neue Types für die Digitalisierung
-export interface DigitalizationOptions {
-    epsilon: number;
-    recognizeHandwriting: boolean;
-    formatOutput: boolean;
-}
-
-export interface BlockMetadata {
-    id: string;
-    type: BlockType;
-    format: 'normal' | 'bold' | 'italic';
-    recognizedText?: string;
-    confidence?: number;
-}
-
 // Helper type for partial updates
 export type PartialBlock = Partial<Block> & { id: string };
-
-
-// Tabellen
-export interface TableLine {
-    id: string;
-    type: 'horizontal' | 'vertical';
-    position: number; // x für vertikale Linien, y für horizontale Linien
-    visible: boolean;
-}
-
-export interface PartialTableLine {
-    id?: string;
-    type?: 'horizontal' | 'vertical';
-    position?: number;
-    visible?: boolean;
-}
-
-export interface TableCell {
-    id: string;
-    row: number;
-    col: number;
-    rowSpan: number;
-    colSpan: number;
-}
-
-export interface TableGrid {
-    id: string;
-    rows: number;       // Anzahl der Zeilen
-    cols: number;       // Anzahl der Spalten
-    rowHeights: number[];  // Höhe jeder Zeile in Pixeln
-    colWidths: number[];   // Breite jeder Spalte in Pixeln
-    cells: TableCell[];    // Zellen mit Spans
-}
 
 export interface StrokeSelection {
   strokeIds: string[];

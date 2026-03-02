@@ -7,7 +7,6 @@ import { CubicBezier } from 'bezierFitting';
 import { BlockManager } from './block-manager';
 import { DrawingManager } from './drawing-manager';
 import { ToolbarManager } from './toolbar-manager';
-import { DigitalizationManager } from './digitalization-manager';
 import { StyleManager } from './style-manager';
 import { StrokeSelectionManager } from './stroke-selection-manager';
 
@@ -21,7 +20,6 @@ export class InkView extends FileView {
     public blockManager: BlockManager;
     public drawingManager: DrawingManager;
     public toolbarManager: ToolbarManager;
-    public digitalizationManager: DigitalizationManager;
     public styleManager: StyleManager;
 
     // Shared state
@@ -40,7 +38,6 @@ export class InkView extends FileView {
         this.strokeSelectionManager = new StrokeSelectionManager(this);
         this.drawingManager = new DrawingManager(this);
         this.blockManager = new BlockManager(this);
-        this.digitalizationManager = new DigitalizationManager(this);
         this.toolbarManager = new ToolbarManager(this);
     }
 
@@ -110,24 +107,12 @@ export class InkView extends FileView {
             this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);
             if (this.blocks.length === 0) {
                 this.blockManager.addNewBlock('paragraph', 0, true);
-            } else {
-                // Tabellen initialisieren für geladene Blöcke
-                this.blocks.forEach(block => {
-                    if (block.type === 'table' && !block.tableGrid) {
-                        this.blockManager.initializeTableBlock(block.id, 3, 3);
-                    }
-                });
             }
         }
 
         this.blockManager.renderBlocks();
         this.setupEventListeners();
         this.styleManager.setupThemeObserver();
-
-        // Tabellen-Tools Sichtbarkeit aktualisieren - mit Timeout um sicherzustellen, dass alles geladen ist
-        setTimeout(() => {
-            this.toolbarManager.updateTableToolsVisibility();
-        }, 100);
     }
 
     private setupEventListeners(): void {
@@ -135,8 +120,6 @@ export class InkView extends FileView {
             if (!this.contentEl.contains(document.activeElement)) return;
 
             const currentBlock = this.blocks[this.currentBlockIndex];
-            const isTableBlock = currentBlock && currentBlock.type === 'table';
-            const tableToolMode = this.blockManager.getTableToolMode();
 
             // Handle stroke manipulation shortcuts
             if (this.drawingManager.currentTool === 'selection') {
@@ -194,113 +177,7 @@ export class InkView extends FileView {
             switch (e.key) {
                 case 'Escape':
                     this.drawingManager.setTool('selection');
-                    // Tabellen-Tool-Modus beenden, falls aktiv
-                    if (tableToolMode) {
-                        this.blockManager.setTableToolMode(null);
-                        new Notice('Table edit mode exited');
-                    }
                     break;
-
-                case 'ArrowUp':
-                case 'ArrowDown':
-                    if (isTableBlock && tableToolMode === 'move-line') {
-                        // Feinjustierung von Linien mit Pfeiltasten
-                        const selectedLine = this.blockManager.getSelectedLine();
-                        if (selectedLine) {
-                            const adjustment = e.key === 'ArrowUp' ? -1 : 1;
-                            if (selectedLine.type === 'horizontal') {
-                                // Bewege horizontale Linie um 1 Pixel
-                                if (currentBlock.tableGrid?.rowHeights[selectedLine.index] === undefined) return;
-                                this.blockManager.moveGridLine(
-                                    currentBlock.id,
-                                    'horizontal',
-                                    selectedLine.index,
-                                    currentBlock.tableGrid.rowHeights[selectedLine.index]! + adjustment
-                                );
-                            } else {
-                                if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
-                                // Bewege vertikale Linie um 1 Pixel
-                                this.blockManager.moveGridLine(
-                                    currentBlock.id,
-                                    'vertical',
-                                    selectedLine.index,
-                                    currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
-                                );
-                            }
-                            e.preventDefault();
-                        }
-                    }
-                    break;
-
-                case 'ArrowLeft':
-                case 'ArrowRight':
-                    if (isTableBlock && tableToolMode === 'move-line') {
-                        // Feinjustierung von vertikalen Linien mit Pfeiltasten
-                        const selectedLine = this.blockManager.getSelectedLine();
-                        if (selectedLine && selectedLine.type === 'vertical') {
-                            const adjustment = e.key === 'ArrowLeft' ? -1 : 1;
-                            if (currentBlock.tableGrid?.colWidths[selectedLine.index] === undefined) return;
-                            this.blockManager.moveGridLine(
-                                currentBlock.id,
-                                'vertical',
-                                selectedLine.index,
-                                currentBlock.tableGrid!.colWidths[selectedLine.index]! + adjustment
-                            );
-                            e.preventDefault();
-                        }
-                    }
-                    break;
-
-                case 'Backspace':
-                    // Im Tabellen-Modus: Linien ausblenden statt löschen
-                    if (isTableBlock && tableToolMode === 'move-line') {
-                        e.preventDefault();
-                    }
-                    break;
-
-                case 'r':
-                case 'R':
-                    if (e.ctrlKey && e.shiftKey && isTableBlock) {
-                        // Zeile einfügen
-                        if (currentBlock.tableGrid) {
-                            this.blockManager.insertTableRow(currentBlock.id, currentBlock.tableGrid.rows);
-                            new Notice('Row inserted');
-                            e.preventDefault();
-                        }
-                    }
-                    break;
-
-                case 'c':
-                case 'C':
-                    if (e.ctrlKey && e.shiftKey && isTableBlock) {
-                        // Spalte einfügen
-                        if (currentBlock.tableGrid) {
-                            this.blockManager.insertTableColumn(currentBlock.id, currentBlock.tableGrid.cols);
-                            new Notice('Column inserted');
-                            e.preventDefault();
-                        }
-                    }
-                    break;
-
-                case 'm':
-                case 'M':
-                    if (e.ctrlKey && e.shiftKey && isTableBlock) {
-                        // Tabellen-Modus umschalten
-                        const nextMode = tableToolMode === 'move-line' ? 'merge-cells' :
-                            tableToolMode === 'merge-cells' ? null : 'move-line';
-                        this.blockManager.setTableToolMode(nextMode);
-
-                        if (nextMode === 'move-line') {
-                            new Notice('Table line move mode - click and drag lines to adjust');
-                        } else if (nextMode === 'merge-cells') {
-                            new Notice('Table merge mode - click two cells to merge them');
-                        } else {
-                            new Notice('Table edit mode exited');
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-
                 case 'p':
                 case 'P':
                     if (e.ctrlKey) {
@@ -321,14 +198,6 @@ export class InkView extends FileView {
                 case 'S':
                     if (e.ctrlKey) {
                         this.saveDocument();
-                        e.preventDefault();
-                    }
-                    break;
-
-                case 'd':
-                case 'D':
-                    if (e.ctrlKey) {
-                        this.digitalizationManager.digitalizeCurrentDocument();
                         e.preventDefault();
                     }
                     break;
@@ -372,13 +241,6 @@ export class InkView extends FileView {
         if (this.blocksContainer) {
             (this.blocksContainer as HTMLElement).scrollTop = 0;
         }
-
-        // Tabellen-Tools aktualisieren
-        setTimeout(() => {
-            this.toolbarManager.updateTableToolsVisibility();
-            // Grid controls aktualisieren
-            this.toolbarManager.updateGridControls();
-        }, 100);
     }
 
     async loadDocument(): Promise<void> {
@@ -448,130 +310,5 @@ export class InkView extends FileView {
         if (themeObserver) {
             themeObserver.disconnect();
         }
-    }
-
-    //Debug
-    /**
-     * Zeichnet eine Dichtebitmap auf dem Canvas eines bestimmten Blocks.
-     * @param block - Der Block, auf dessen Canvas gezeichnet wird.
-     * @param bitmap - Die Dichtematrix (number[][]), erzeugt von createBitmapFromStrokes.
-     * @param resolution - Die Auflösung, mit der die Bitmap erstellt wurde (Pixel pro Einheit).
-     */
-    public drawBitmapForBlock(block: Block, bitmap: number[][], resolution: number, minX: number, minY: number): void {
-        const canvas = this.blockManager.getCanvasForBlock(block.id);
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const height = bitmap.length;
-        if (height === 0) return;
-        const width = bitmap[0]?.length ?? 0;
-        if (width === 0) return;
-
-        // Maximale Dichte für Transparenz-Skalierung
-        let maxDensity = 0;
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const val = bitmap[y]?.[x];
-                if (val !== undefined) maxDensity = Math.max(maxDensity, val);
-            }
-        }
-
-        // Offscreen-Canvas in der Größe der Bitmap
-        const offscreen = document.createElement('canvas');
-        offscreen.width = width;
-        offscreen.height = height;
-        const offCtx = offscreen.getContext('2d');
-        if (!offCtx) return;
-
-        const imageData = offCtx.createImageData(width, height);
-        const data = imageData.data;
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const idx = (y * width + x) * 4;
-                const value = maxDensity > 0 ? (bitmap[y]?.[x] ?? 0) / maxDensity : 0;
-                const alpha = Math.round(value * 255);
-                data[idx] = 255;     // Rot
-                data[idx + 1] = 0;
-                data[idx + 2] = 0;
-                data[idx + 3] = alpha;
-            }
-        }
-        offCtx.putImageData(imageData, 0, 0);
-
-        // Weltgröße der Bitmap
-        const worldWidth = width / resolution;
-        const worldHeight = height / resolution;
-
-        // Temporär die Transformation zurücksetzen und die Bitmap in Weltkoordinaten zeichnen
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Identitätsmatrix
-        ctx.drawImage(offscreen, minX, minY, worldWidth, worldHeight);
-        ctx.restore();
-    }
-
-    /**
- * Zeichnet horizontale Linien an den gegebenen y-Positionen auf dem Canvas eines Blocks.
- * @param block - Der Block, auf dessen Canvas gezeichnet wird.
- * @param yPositions - Array von y-Koordinaten in Weltkoordinaten.
- */
-    public drawHorizontalLines(block: Block, yPositions: number[]): void {
-        const canvas = this.blockManager.getCanvasForBlock(block.id);
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        ctx.save();
-        ctx.strokeStyle = 'blue';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]); // gestrichelt
-
-        for (const y of yPositions) {
-            ctx.beginPath();
-            ctx.moveTo(block.bbox.x, y);
-            ctx.lineTo(block.bbox.x + block.bbox.width, y);
-            ctx.stroke();
-        }
-
-        ctx.restore();
-    }
-
-    public drawPath(block: Block, points: Point[], color: string = 'blue', dashed: boolean = true): void {
-        const canvas = this.blockManager.getCanvasForBlock(block.id);
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        if (points.length < 2) return;
-
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        if (dashed) {
-            ctx.setLineDash([5, 5]);
-        } else {
-            ctx.setLineDash([]);
-        }
-
-        ctx.beginPath();
-        if (points[0] === undefined) return;
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i++) {
-            if (points[i] === undefined) continue;
-            ctx.lineTo(points[i]!.x, points[i]!.y);
-        }
-        ctx.stroke();
-
-        // Start und Ziel markieren
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(points[0].x, points[0].y, 3, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.beginPath();
-        if (points[points.length - 1] === undefined) return;
-        ctx.arc(points[points.length - 1]!.x, points[points.length - 1]!.y, 3, 0, 2 * Math.PI);
-        ctx.fill();
-
-        ctx.restore();
     }
 }

@@ -391,3 +391,53 @@
 .theme-light .grid-preview {
     background: #ffffff;
 }
+
+/* ── Ink Embed (eingebettet in Markdown) ─────────────────── */
+
+.ink-embed {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 8px 0;
+    background: var(--background-primary);
+}
+
+.ink-embed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: 0.85em;
+}
+
+.ink-embed-title {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.ink-embed-edit-btn {
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    cursor: pointer;
+}
+
+.ink-embed-edit-btn:hover {
+    background: var(--interactive-hover);
+}
+
+.ink-embed-canvas {
+    padding: 8px;
+    cursor: pointer;
+}
+
+.ink-embed-error {
+    color: var(--text-error);
+    padding: 8px 12px;
+    font-size: 0.85em;
+}

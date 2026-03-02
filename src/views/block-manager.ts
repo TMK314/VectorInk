@@ -1,15 +1,12 @@
 import { Block, BlockType, PartialBlock, BoundingBox } from '../types';
 import { InkView } from './InkView';
 import { Notice } from 'obsidian';
-import { TableManager } from './table-manager';
 
 export class BlockManager {
     private context: InkView;
-    private tableManager: TableManager;
 
     constructor(context: InkView) {
         this.context = context;
-        this.tableManager = new TableManager(context);
     }
 
     public renderBlocks(): void {
@@ -21,30 +18,7 @@ export class BlockManager {
         this.context.blocks.forEach((block, index) => {
             const blockElement = this.createBlockElement(block, index);
             this.context.blocksContainer!.appendChild(blockElement);
-
-            // Overlay verzögert hinzufügen
-            if (block.type === 'table' && block.tableGrid) {
-                setTimeout(() => {
-                    // Prüfe ob das Element noch existiert
-                    const currentBlockEl = this.context.blocksContainer?.querySelector(`.ink-block[data-block-id="${block.id}"]`);
-                    if (currentBlockEl && document.body.contains(currentBlockEl)) {
-                        // Lösche vorhandene Overlays zuerst
-                        const existingOverlay = currentBlockEl.querySelector('.table-grid-overlay');
-                        if (existingOverlay) {
-                            existingOverlay.remove();
-                        }
-                        this.createTableGridOverlay(currentBlockEl as HTMLElement, block);
-                    }
-                }, 50); // Erhöhte Verzögerung für bessere DOM-Stabilität
-            }
         });
-
-        // Tabellen-Tools Sichtbarkeit aktualisieren
-        setTimeout(() => {
-            if (this.context.toolbarManager) {
-                this.context.toolbarManager.updateTableToolsVisibility();
-            }
-        }, 100);
     }
 
     private createBlockElement(block: Block, index: number): HTMLElement {
@@ -91,8 +65,7 @@ export class BlockManager {
                 { value: 'heading5', label: 'Heading 5', icon: 'H5' },
                 { value: 'math', label: 'Math', icon: '∑' },
                 { value: 'quote', label: 'Quote', icon: '❝' },
-                { value: 'drawing', label: 'Drawing', icon: '🖼️' },
-                { value: 'table', label: 'Table', icon: '📊' }
+                { value: 'drawing', label: 'Drawing', icon: '🖼️' }
             ];
 
             blockTypes.forEach(type => {
@@ -197,26 +170,12 @@ export class BlockManager {
             if (!target.closest('select, button, input, .grid-line, .table-cell-overlay')) {
                 this.context.currentBlockIndex = index;
                 this.renderBlocks(); // Neu rendern aktualisiert die UI komplett
-
-                // Tabellen-Tools aktualisieren
-                setTimeout(() => {
-                    if (this.context.toolbarManager) {
-                        this.context.toolbarManager.updateTableToolsVisibility();
-                    }
-                }, 0);
             }
         };
 
         blockEl.ondblclick = (e) => {
             this.context.currentBlockIndex = index;
             this.renderBlocks();
-
-            // Tabellen-Tools aktualisieren
-            setTimeout(() => {
-                if (this.context.toolbarManager) {
-                    this.context.toolbarManager.updateTableToolsVisibility();
-                }
-            }, 0);
         };
 
         return blockEl;
@@ -232,8 +191,7 @@ export class BlockManager {
             'heading5': 'H5',
             'math': '∑',
             'quote': '❝',
-            'drawing': '🖼️',
-            'table': '📊'
+            'drawing': '🖼️'
         };
         return icons[type] || '?';
     }
@@ -347,18 +305,11 @@ export class BlockManager {
             bbox: {
                 x: 20,
                 y: order * 250 + 20,
-                width: type === 'table' ? 800 : 760, // Breitere Tabellen
-                height: type === 'table' ? 300 : 200 // Höhere Tabellen
+                width: 760, // Breitere Tabellen
+                height: 200 // Höhere Tabellen
             },
             order
         };
-
-        // Für Tabellen: Gitter initialisieren
-        if (type === 'table') {
-            setTimeout(() => {
-                this.tableManager.initializeTableBlock(newBlock.id, 3, 3);
-            }, 100);
-        }
 
         this.context.blocks.push(newBlock);
 
@@ -492,10 +443,6 @@ export class BlockManager {
         }
     }
 
-    public handleCanvasClickForTable(block: Block, x: number, y: number): boolean {
-        return this.tableManager.handleCanvasClickForTable(block, x, y);
-    }
-
     public getCanvasForBlock(blockId: string): HTMLCanvasElement | null {
         if (!this.context.blocksContainer) return null;
         const blockEl = this.context.blocksContainer.querySelector(`.ink-block[data-block-id="${blockId}"]`);
@@ -506,16 +453,15 @@ export class BlockManager {
     public updateBlockMargins(): void {
         if (!this.context.blocksContainer) return;
 
-        const blocks = this.context.blocksContainer.querySelectorAll('.ink-block');
-        blocks.forEach((block: HTMLElement, index) => {
+        const blocks = this.context.blocksContainer.querySelectorAll<HTMLElement>('.ink-block');
+        blocks.forEach((block, index) => {
             const isSelected = index === this.context.currentBlockIndex;
             const marginTop = isSelected ?
-                Math.max(this.context.blockManager.blockMargins.top, 12) :
-                this.context.blockManager.blockMargins.top;
+                Math.max(this.blockMargins.top, 12) :
+                this.blockMargins.top;
             const marginBottom = isSelected ?
-                Math.max(this.context.blockManager.blockMargins.bottom, 12) :
-                this.context.blockManager.blockMargins.bottom;
-
+                Math.max(this.blockMargins.bottom, 12) :
+                this.blockMargins.bottom;
             block.style.marginTop = `${marginTop}px`;
             block.style.marginBottom = `${marginBottom}px`;
         });
@@ -523,50 +469,5 @@ export class BlockManager {
 
     public get blockMargins() {
         return this.context.toolbarManager.blockMargins;
-    }
-
-    // Tabellen-Methoden Delegation
-    public get tableManagerInstance(): TableManager {
-        return this.tableManager;
-    }
-
-    public createTableGridOverlay(blockEl: HTMLElement, block: Block): void {
-        this.tableManager.createTableGridOverlay(blockEl, block);
-    }
-
-    public moveGridLine(blockId: string, lineType: 'horizontal' | 'vertical', lineIndex: number, newPosition: number): void {
-        this.tableManager.moveGridLine(blockId, lineType, lineIndex, newPosition);
-    }
-
-    public removeSelectedLine(): void {
-        this.tableManager.removeSelectedLine();
-    }
-
-    public initializeTableBlock(blockId: string, rows: number = 3, cols: number = 3): void {
-        this.tableManager.initializeTableBlock(blockId, rows, cols);
-    }
-
-    public insertTableRow(blockId: string, rowIndex: number): void {
-        this.tableManager.insertTableRow(blockId, rowIndex);
-    }
-
-    public insertTableColumn(blockId: string, colIndex: number): void {
-        this.tableManager.insertTableColumn(blockId, colIndex);
-    }
-
-    public mergeTableCells(blockId: string, start: { row: number, col: number }, end: { row: number, col: number }): void {
-        this.tableManager.mergeTableCells(blockId, start, end);
-    }
-
-    public setTableToolMode(mode: 'add-line' | 'move-line' | 'merge-cells' | null): void {
-        this.tableManager.setTableToolMode(mode);
-    }
-
-    public getTableToolMode(): 'add-line' | 'move-line' | 'merge-cells' | null {
-        return this.tableManager.getTableToolMode();
-    }
-
-    public getSelectedLine(): { type: 'horizontal' | 'vertical', index: number } | null {
-        return this.tableManager.getSelectedLine();
     }
 }

@@ -39,7 +39,6 @@ export class DrawingManager {
         let lastPoint: Point | null = null;
         let lastErasePoint: Point | null = null;
         let isMouseDown = false;
-        let isTableModeClick = false;
 
         // Stroke selection variables
         let isSelectingRect = false;
@@ -603,28 +602,14 @@ export class DrawingManager {
             isMouseDown = true;
             updateCursor(point);
 
-            // Prüfe ob wir im Tabellenmodus sind
             const block = this.context.blocks[blockIndex];
-            const tableMode = this.context.toolbarManager.getCurrentTableMode();
 
             if (!block) return;
 
             // Verwende direkt die Canvas-Koordinaten
             const blockX = point.x;
             const blockY = point.y;
-
-            if (block.type === 'table' && tableMode &&
-                (tableMode === 'vertical-line' || tableMode === 'horizontal-line')) {
-                // Tabellen-Linien-Modus: Linie hinzufügen
-                isTableModeClick = true;
-                // Übergebe den Klick an den TableManager
-                const handled = this.context.blockManager.handleCanvasClickForTable(block, blockX, blockY);
-                if (handled) {
-                    e.stopPropagation();
-                }
-                return;
-            }
-
+            
             // Je nach Tool unterschiedlich handeln
             if (this.currentTool === 'selection') {
                 startSelection(point, e);
@@ -641,9 +626,6 @@ export class DrawingManager {
             if (!point) return;
 
             updateCursor(point);
-
-            // Wenn wir im Tabellenmodus klicken, zeichnen wir nicht
-            if (isTableModeClick) return;
 
             if (this.currentTool === 'selection') {
                 if (isDraggingSelection) {
@@ -676,11 +658,6 @@ export class DrawingManager {
         const handleMouseUp = (e: MouseEvent) => {
             const point = getPoint(e);
             isMouseDown = false;
-
-            if (isTableModeClick) {
-                isTableModeClick = false;
-                return;
-            }
 
             if (this.currentTool === 'selection') {
                 if (isSelectingRect && point) {
@@ -926,8 +903,8 @@ export class DrawingManager {
             this.expandBlock(canvas, block, 'height', additionalHeight);
         }
 
-        // Prüfe nach rechts (für drawing und table Blöcke)
-        if ((block.type === 'drawing' || block.type === 'table') &&
+        // Prüfe nach rechts (für drawing Blöcke)
+        if ((block.type === 'drawing') &&
             point.x > block.bbox.width - threshold) {
             const additionalWidth = Math.max(
                 50, // Mindesterweiterung
@@ -943,28 +920,8 @@ export class DrawingManager {
 
         if (dimension === 'width') {
             block.bbox.width += amount;
-
-            // Für Tabellen: Breite proportional auf alle Spalten verteilen
-            if (block.type === 'table' && block.tableGrid) {
-                const grid = block.tableGrid;
-                const incrementPerCol = amount / grid.cols;
-                for (let i = 0; i < grid.cols; i++) {
-                    if (grid.colWidths[i] === undefined) continue;
-                    grid.colWidths[i]! += incrementPerCol;
-                }
-            }
         } else {
             block.bbox.height += amount;
-
-            // Für Tabellen: Höhe proportional auf alle Zeilen verteilen
-            if (block.type === 'table' && block.tableGrid) {
-                const grid = block.tableGrid;
-                const incrementPerRow = amount / grid.rows;
-                for (let i = 0; i < grid.rows; i++) {
-                    if (grid.rowHeights[i] === undefined) continue;
-                    grid.rowHeights[i]! += incrementPerRow;
-                }
-            }
         }
 
         // Canvas aktualisieren
@@ -973,93 +930,7 @@ export class DrawingManager {
         // Strokes neu zeichnen
         this.drawBlockStrokes(canvas, block);
 
-        // Tabellen-Overlay neu positionieren
-        if (block.type === 'table') {
-            this.adjustTableOverlayForExpansion(canvas, block, dimension, amount);
-        }
-
         console.log(`Block expanded ${dimension}: ${dimension === 'width' ? `${oldWidth}->${block.bbox.width}` : `${oldHeight}->${block.bbox.height}`}`);
-    }
-
-    private adjustTableOverlayForExpansion(canvas: HTMLCanvasElement, block: Block, dimension: 'width' | 'height', amount: number): void {
-        if (!block.tableGrid) return;
-
-        const blockEl = canvas.closest('.ink-block') as HTMLElement;
-        if (!blockEl) return;
-
-        // Finde das aktuelle Overlay
-        const overlay = blockEl.querySelector('.table-grid-overlay') as HTMLElement;
-        if (!overlay) return;
-
-        // Holen Sie sich die Canvas-Position
-        const canvasRect = canvas.getBoundingClientRect();
-        const blockRect = blockEl.getBoundingClientRect();
-
-        // Berechne neue Position für das Overlay
-        const canvasLeft = canvasRect.left - blockRect.left;
-        const canvasTop = canvasRect.top - blockRect.top;
-
-        // Setze die neue Position und Größe
-        overlay.style.left = `${canvasLeft}px`;
-        overlay.style.top = `${canvasTop}px`;
-        overlay.style.width = `${canvasRect.width}px`;
-        overlay.style.height = `${canvasRect.height}px`;
-
-        // Passe die Linien innerhalb des Overlays an
-        this.adjustGridLinesInOverlay(overlay, block, dimension, amount);
-    }
-
-    private adjustGridLinesInOverlay(overlay: HTMLElement, block: Block, dimension: 'width' | 'height', amount: number): void {
-        if (!block.tableGrid) return;
-
-        const grid = block.tableGrid;
-        const lines = overlay.querySelectorAll('.grid-line') as NodeListOf<HTMLElement>;
-
-        lines.forEach(line => {
-            const lineType = line.dataset.lineType as 'horizontal' | 'vertical';
-            const lineIndex = parseInt(line.dataset.lineIndex || '0');
-
-            if (lineType === 'vertical' && dimension === 'width') {
-                // Für vertikale Linien bei Breitenerweiterung
-
-                // Berechne das Verhältnis für die Position
-                const oldPosition = parseFloat(line.style.left);
-
-                // Wenn es die letzte Linie ist, verschiebe sie nach rechts
-                if (lineIndex === grid.cols) {
-                    // Letzte Linie: bleibe am rechten Rand
-                    const canvasRect = overlay.getBoundingClientRect();
-                    line.style.left = `${canvasRect.width - 2}px`;
-                } else {
-                    // Innere Linien: behalte relative Position bei
-                    // Berechne das Verhältnis der alten Position zur alten Breite
-                    const oldWidth = block.bbox.width - amount;
-                    const ratio = oldPosition / oldWidth;
-                    const newPosition = ratio * block.bbox.width;
-                    line.style.left = `${newPosition}px`;
-                }
-            }
-
-            if (lineType === 'horizontal' && dimension === 'height') {
-                // Für horizontale Linien bei Höhenerweiterung
-
-                // Berechne das Verhältnis für die Position
-                const oldPosition = parseFloat(line.style.top);
-
-                // Wenn es die letzte Linie ist, verschiebe sie nach unten
-                if (lineIndex === grid.rows) {
-                    // Letzte Linie: bleibe am unteren Rand
-                    const canvasRect = overlay.getBoundingClientRect();
-                    line.style.top = `${canvasRect.height - 2}px`;
-                } else {
-                    // Innere Linien: behalte relative Position bei
-                    const oldHeight = block.bbox.height - amount;
-                    const ratio = oldPosition / oldHeight;
-                    const newPosition = ratio * block.bbox.height;
-                    line.style.top = `${newPosition}px`;
-                }
-            }
-        });
     }
 
     public resizeCanvas(canvas: HTMLCanvasElement, block: Block): void {
@@ -1086,30 +957,7 @@ export class DrawingManager {
             const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
             const extraHeight = isSelected ? 120 : 80;
             blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
-
-            // Wenn sich die Größe geändert hat, passe Tabellen-Overlay an
-            if ((oldWidth !== block.bbox.width || oldHeight !== block.bbox.height) && block.type === 'table') {
-                setTimeout(() => {
-                    this.adjustTableOverlayForResize(canvas, block);
-                }, 10);
-            }
         }
-    }
-
-    private adjustTableOverlayForResize(canvas: HTMLCanvasElement, block: Block): void {
-        if (!block.tableGrid) return;
-
-        const blockEl = canvas.closest('.ink-block') as HTMLElement;
-        if (!blockEl) return;
-
-        // Entferne vorhandenes Overlay
-        const existingOverlay = blockEl.querySelector('.table-grid-overlay');
-        if (existingOverlay) {
-            existingOverlay.remove();
-        }
-
-        // Erstelle neues Overlay
-        this.context.blockManager.createTableGridOverlay(blockEl, block);
     }
 
     public adjustBlockSizeAfterErasing(blockId: string): void {
@@ -1138,13 +986,12 @@ export class DrawingManager {
 
         if (!hasStrokes) {
             // Wenn keine Striche mehr, zurücksetzen auf Standardgröße
-            block.bbox.width = block.type === 'table' ? 800 : 760;
-            block.bbox.height = block.type === 'table' ? 300 : 200;
+            block.bbox.width =  760;
+            block.bbox.height = 200;
         } else {
             // Berechne benötigte Größe mit Padding
-            const neededWidth = Math.max(maxX + 100, block.type === 'table' ? 800 : 760);
-            const neededHeight = Math.max(maxY + 100, block.type === 'table' ? 300 : 200);
-
+            const neededWidth = Math.max(maxX + 100, 760);
+            const neededHeight = Math.max(maxY + 100, 200);
             // Reduziere nur wenn deutlich größer als benötigt (> 150px extra)
             if (block.bbox.width - neededWidth > 150) {
                 block.bbox.width = neededWidth;
@@ -1157,21 +1004,6 @@ export class DrawingManager {
         // Canvas aktualisieren
         this.resizeCanvas(canvas, block);
         this.drawBlockStrokes(canvas, block);
-
-        // Tabellen-Overlay neu zeichnen
-        if (block.type === 'table') {
-            setTimeout(() => {
-                // Tabellen-Overlay entfernen und neu erstellen
-                const blockEl = this.context.blocksContainer?.querySelector(`.ink-block[data-block-id="${block.id}"]`);
-                if (blockEl) {
-                    const existingOverlay = blockEl.querySelector('.table-grid-overlay');
-                    if (existingOverlay) {
-                        existingOverlay.remove();
-                    }
-                    this.context.blockManager.createTableGridOverlay(blockEl as HTMLElement, block);
-                }
-            }, 50);
-        }
     }
 
     public updateBlockCanvasSize(block: Block, canvas: HTMLCanvasElement) {
@@ -1423,12 +1255,6 @@ export class DrawingManager {
 
         if (!block || !canvas) return;
 
-        // Für Tabellen: Spezielle Logik
-        if (block.type === 'table') {
-            this.adjustTableBlockSize(block, canvas);
-            return;
-        }
-
         // Für andere Blöcke: Bestehende Logik
         const optimalSize = this.calculateOptimalBlockSize(block);
 
@@ -1439,61 +1265,6 @@ export class DrawingManager {
         if (widthDiff > 50 || heightDiff > 50) {
             block.bbox.width = optimalSize.width;
             block.bbox.height = optimalSize.height;
-            this.resizeCanvas(canvas, block);
-            this.drawBlockStrokes(canvas, block);
-        }
-    }
-
-    private adjustTableBlockSize(block: Block, canvas: HTMLCanvasElement): void {
-        if (!block.tableGrid) return;
-
-        const grid = block.tableGrid;
-
-        // Mindestgrößen basierend auf Gitter
-        const MIN_CELL_WIDTH = 100;
-        const MIN_CELL_HEIGHT = 60;
-        const PADDING = 40;
-
-        // Berechne benötigte Größe
-        const requiredWidth = grid.colWidths.reduce((a, b) => a + b, 0) + PADDING;
-        const requiredHeight = grid.rowHeights.reduce((a, b) => a + b, 0) + PADDING;
-
-        // Prüfe, ob Zellen zu klein sind
-        let needsResize = false;
-
-        for (let width of grid.colWidths) {
-            if (width < MIN_CELL_WIDTH) {
-                needsResize = true;
-                break;
-            }
-        }
-
-        for (let height of grid.rowHeights) {
-            if (height < MIN_CELL_HEIGHT) {
-                needsResize = true;
-                break;
-            }
-        }
-
-        // Prüfe auf Überfüllung (zu viel Leerraum)
-        const widthRatio = block.bbox.width / requiredWidth;
-        const heightRatio = block.bbox.height / requiredHeight;
-        const MAX_WASTE_RATIO = 1.5; // Maximal 50% Leerraum
-
-        if (widthRatio > MAX_WASTE_RATIO || heightRatio > MAX_WASTE_RATIO) {
-            needsResize = true;
-        }
-
-        if (needsResize) {
-            // Neue Größe berechnen
-            const newWidth = Math.max(requiredWidth, block.bbox.width * 0.8);
-            const newHeight = Math.max(requiredHeight, block.bbox.height * 0.8);
-
-            // Maximal 20% Verkleinerung pro Schritt
-            const maxReduction = 0.8; // 20% reduction max
-            block.bbox.width = Math.max(newWidth, block.bbox.width * maxReduction);
-            block.bbox.height = Math.max(newHeight, block.bbox.height * maxReduction);
-
             this.resizeCanvas(canvas, block);
             this.drawBlockStrokes(canvas, block);
         }
