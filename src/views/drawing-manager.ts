@@ -1405,7 +1405,8 @@ export class DrawingManager {
 
     // Grid Patern ----------------------------
     private drawGrid(canvas: HTMLCanvasElement, block: Block): void {
-        const grid = this.getBlockDisplaySettings(block).grid;
+        const ds = this.getBlockDisplaySettings(block);
+        const grid = ds.grid;
         if (!grid.enabled) return;
 
         const ctx = canvas.getContext('2d');
@@ -1413,17 +1414,16 @@ export class DrawingManager {
 
         const isDark = this.context.styleManager.isDarkTheme();
 
-        // Standard-Grid-Farbe basierend auf Theme
-        let gridColor = grid.color;
-        if (grid.color === '#e0e0e0' || !grid.color) {
-            gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
-        }
+        // Grid-Farbe: gespeicherte Farbe wenn useColor==true, sonst Theme-Farbe
+        const gridColor = ds.useColor
+            ? grid.color
+            : (isDark ? '#555555' : '#d0d0d0');
 
         ctx.save();
         ctx.globalAlpha = grid.opacity;
         ctx.strokeStyle = gridColor;
         ctx.fillStyle = gridColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
 
         const size = grid.size;
         const width = canvas.width;

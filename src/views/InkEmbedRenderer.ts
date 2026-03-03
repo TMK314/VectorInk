@@ -145,7 +145,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         // Grid als SVG-Pattern einzeichnen
         const grid = block.displaySettings?.grid;
         if (grid?.enabled && grid.type !== 'none') {
-            this.appendGridToSVG(svg, ns, vbX, vbY, vbW, vbH, grid);
+            this.appendGridToSVG(svg, ns, vbX, vbY, vbW, vbH, grid, useColor);
         }
 
         // Drawing-Blöcke: gespeicherte Strichdicke, kein block-spezifischer Multiplikator.
@@ -176,8 +176,14 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     private appendGridToSVG(
         svg: SVGSVGElement, ns: string,
         x: number, y: number, w: number, h: number,
-        grid: GridSettings
+        grid: GridSettings, useColor: boolean
     ): void {
+        // Grid-Farbe: gespeicherte Farbe wenn useColor==true, sonst Theme-Farbe
+        const isDark = document.body.classList.contains('theme-dark');
+        const gridColor = useColor
+            ? grid.color
+            : (isDark ? '#555555' : '#d0d0d0');
+
         const defs = document.createElementNS(ns, 'defs');
         const pid = `ink-grid-${Math.random().toString(36).slice(2)}`;
         const pat = document.createElementNS(ns, 'pattern');
@@ -191,7 +197,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             dot.setAttribute('cx', String(grid.size / 2));
             dot.setAttribute('cy', String(grid.size / 2));
             dot.setAttribute('r', '1');
-            dot.setAttribute('fill', grid.color);
+            dot.setAttribute('fill', gridColor);
             dot.setAttribute('opacity', String(grid.opacity));
             pat.appendChild(dot);
         } else {
@@ -202,8 +208,8 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
                 : `M 0 ${grid.size} L ${grid.size} ${grid.size}`; // nur horizontal für lines
             path.setAttribute('d', d);
             path.setAttribute('fill', 'none');
-            path.setAttribute('stroke', grid.color);
-            path.setAttribute('stroke-width', '0.5');
+            path.setAttribute('stroke', gridColor);
+            path.setAttribute('stroke-width', '2');
             path.setAttribute('opacity', String(grid.opacity));
             pat.appendChild(path);
         }
@@ -703,10 +709,6 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, block.bbox.width, block.bbox.height);
 
-        // Grid zeichnen
-        const grid = block.displaySettings?.grid;
-        if (grid?.enabled) this.drawGridOnCanvas(ctx, block, grid);
-
         // Drawing-Blöcke: gespeicherte Strichdicke, kein Multiplikator.
         // Alle anderen Typen: typeMultiplier × widthMultiplier.
         const isDrawing = block.type === 'drawing';
@@ -723,7 +725,8 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             const isHighlight = stroke.style.semantic === 'highlight';
             const isBold = stroke.style.semantic === 'bold';
             // bold: 1.5× zusätzlich zum block-spezifischen Multiplikator
-            const semanticMul = isBold ? 1.5 : 1.0;
+            let semanticMul = isBold ? 1.5 : 1.0;
+            semanticMul = stroke.style.semantic === 'italic' ? 0.75 : semanticMul;
             const width = isHighlight
                 ? (stroke.style.width ?? 2) * 3
                 : (stroke.style.width ?? 2) * widthMultiplier * semanticMul;
@@ -746,40 +749,6 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             }
             ctx.stroke();
             ctx.globalAlpha = 1;
-        }
-        ctx.restore();
-    }
-
-    private drawGridOnCanvas(
-        ctx: CanvasRenderingContext2D, block: Block, grid: GridSettings
-    ): void {
-        const w = block.bbox.width;
-        const h = block.bbox.height;
-        ctx.save();
-        ctx.strokeStyle = grid.color;
-        ctx.fillStyle = grid.color;
-        ctx.globalAlpha = grid.opacity;
-        ctx.lineWidth = 0.5;
-
-        if (grid.type === 'dots') {
-            for (let x = 0; x <= w; x += grid.size) {
-                for (let y = 0; y <= h; y += grid.size) {
-                    ctx.beginPath();
-                    ctx.arc(x, y, 1, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-        } else {
-            // Horizontale Linien
-            for (let y = 0; y <= h; y += grid.size) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-            }
-            // Vertikale Linien (nur bei 'grid')
-            if (grid.type === 'grid') {
-                for (let x = 0; x <= w; x += grid.size) {
-                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-                }
-            }
         }
         ctx.restore();
     }

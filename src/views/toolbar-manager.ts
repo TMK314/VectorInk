@@ -18,6 +18,7 @@ export class ToolbarManager {
     private gridTypeSelect: HTMLSelectElement | null = null;
     private gridSizeInput: HTMLInputElement | null = null;
     private gridOpacityInput: HTMLInputElement | null = null;
+    private gridColorInput: HTMLInputElement | null = null;
 
     // Block display controls (updated on block switch via syncToolbarToCurrentBlock)
     private colorToggle: HTMLInputElement | null = null;
@@ -625,6 +626,40 @@ export class ToolbarManager {
         gridOpacityContainer.appendChild(this.gridOpacityInput);
         this.gridContainer.appendChild(gridOpacityContainer);
 
+        // Grid color - nur anzeigen wenn Grid aktiviert ist
+        const gridColorContainer = document.createElement('div');
+        gridColorContainer.style.display = 'flex';
+        gridColorContainer.style.alignItems = 'center';
+        gridColorContainer.style.gap = '3px';
+        gridColorContainer.style.display = gridSettings.enabled ? 'flex' : 'none';
+
+        const colorLabel = document.createElement('span');
+        colorLabel.textContent = 'Color:';
+        colorLabel.style.fontSize = '11px';
+        colorLabel.style.opacity = '0.8';
+        gridColorContainer.appendChild(colorLabel);
+
+        this.gridColorInput = document.createElement('input');
+        this.gridColorInput.type = 'color';
+        this.gridColorInput.value = gridSettings.color;
+        this.gridColorInput.style.width = '30px';
+        this.gridColorInput.style.height = '22px';
+        this.gridColorInput.style.cursor = 'pointer';
+        this.gridColorInput.style.border = '1px solid var(--background-modifier-border)';
+        this.gridColorInput.style.borderRadius = '3px';
+        this.gridColorInput.onchange = (e) => {
+            const color = (e.target as HTMLInputElement).value;
+            this.applyToSelectedBlocks(block => {
+                const ds = this.ensureBlockDisplaySettings(block);
+                ds.grid = { ...ds.grid, color };
+            });
+            if (this.context.document) this.context.document.setGridSettings({ color });
+            this.context.drawingManager.redrawAllBlocks();
+        };
+
+        gridColorContainer.appendChild(this.gridColorInput);
+        this.gridContainer.appendChild(gridColorContainer);
+
         // Einziger onchange-Handler: speichert Block-Settings, blendet Sub-Controls ein/aus, zeichnet neu
         this.gridEnabledCheckbox.onchange = (e) => {
             const enabled = (e.target as HTMLInputElement).checked;
@@ -633,6 +668,7 @@ export class ToolbarManager {
             if (gridTypeContainer) gridTypeContainer.style.display = enabled ? 'flex' : 'none';
             if (gridSizeContainer) gridSizeContainer.style.display = enabled ? 'flex' : 'none';
             if (gridOpacityContainer) gridOpacityContainer.style.display = enabled ? 'flex' : 'none';
+            if (gridColorContainer) gridColorContainer.style.display = enabled ? 'flex' : 'none';
 
             // Auf Block-Ebene speichern für alle ausgewählten Blöcke
             this.applyToSelectedBlocks(block => {
@@ -661,6 +697,7 @@ export class ToolbarManager {
         if (this.gridTypeSelect) this.gridTypeSelect.value = grid.type;
         if (this.gridSizeInput) this.gridSizeInput.value = grid.size.toString();
         if (this.gridOpacityInput) this.gridOpacityInput.value = (grid.opacity * 100).toString();
+        if (this.gridColorInput) this.gridColorInput.value = grid.color;
 
         // Andere Controls entsprechend ein/ausblenden
         const gridContainer = this.gridContainer;
@@ -668,10 +705,12 @@ export class ToolbarManager {
             const gridTypeContainer = gridContainer.querySelector('div:nth-child(2)') as HTMLElement;
             const gridSizeContainer = gridContainer.querySelector('div:nth-child(3)') as HTMLElement;
             const gridOpacityContainer = gridContainer.querySelector('div:nth-child(4)') as HTMLElement;
+            const gridColorContainer = gridContainer.querySelector('div:nth-child(5)') as HTMLElement;
 
             if (gridTypeContainer) gridTypeContainer.style.display = grid.enabled ? 'flex' : 'none';
             if (gridSizeContainer) gridSizeContainer.style.display = grid.enabled ? 'flex' : 'none';
             if (gridOpacityContainer) gridOpacityContainer.style.display = grid.enabled ? 'flex' : 'none';
+            if (gridColorContainer) gridColorContainer.style.display = grid.enabled ? 'flex' : 'none';
         }
     }
 
