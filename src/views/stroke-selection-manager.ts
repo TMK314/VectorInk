@@ -174,10 +174,10 @@ export class StrokeSelectionManager {
             const stroke = this.context.document?.getStroke(strokeId);
             if (stroke) {
                 if (this.context.document)
-                this.context.document.updateStroke(strokeId, {
-                    points: stroke.points,
-                    bezierCurves: stroke.bezierCurves
-                });
+                    this.context.document.updateStroke(strokeId, {
+                        points: stroke.points,
+                        bezierCurves: stroke.bezierCurves
+                    });
             }
         });
 
@@ -272,7 +272,7 @@ export class StrokeSelectionManager {
             if (stroke) {
                 const newStyle = { ...stroke.style, ...style };
                 if (this.context.document)
-                this.context.document.updateStroke(strokeId, { style: newStyle });
+                    this.context.document.updateStroke(strokeId, { style: newStyle });
             }
         });
 
@@ -320,9 +320,9 @@ export class StrokeSelectionManager {
     public isPointInSelection(point: Point): boolean {
         const bbox = this.getSelectedStrokesBoundingBox();
         if (!bbox) return false;
-        
+
         return point.x >= bbox.x - 10 && point.x <= bbox.x + bbox.width + 10 &&
-               point.y >= bbox.y - 10 && point.y <= bbox.y + bbox.height + 10;
+            point.y >= bbox.y - 10 && point.y <= bbox.y + bbox.height + 10;
     }
 
     public drawSelectionHighlights(canvas: HTMLCanvasElement, block: Block): void {
@@ -331,43 +331,33 @@ export class StrokeSelectionManager {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        ctx.save();
         ctx.strokeStyle = 'var(--interactive-accent)';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
 
-        // Draw bounding box around entire selection
-        const bbox = this.getSelectedStrokesBoundingBox();
-        if (bbox) {
-            ctx.strokeRect(
-                bbox.x - 5, bbox.y - 5,
-                bbox.width + 10, bbox.height + 10
-            );
-        }
-
-        // Draw individual stroke highlights
         this.selectedStrokes.forEach(strokeId => {
             const stroke = this.context.document?.getStroke(strokeId);
+            // Nur zeichnen, wenn der Strich zu diesem Block gehört
             if (!stroke || !block.strokeIds.includes(strokeId)) return;
 
-            if (stroke.points.length > 0) {
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-                for (const point of stroke.points) {
-                    minX = Math.min(minX, point.x);
-                    minY = Math.min(minY, point.y);
-                    maxX = Math.max(maxX, point.x);
-                    maxY = Math.max(maxY, point.y);
-                }
-
-                const padding = 3;
-                ctx.strokeRect(
-                    minX - padding, minY - padding,
-                    maxX - minX + 2 * padding,
-                    maxY - minY + 2 * padding
-                );
+            // Bounding Box des einzelnen Strichs berechnen
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const point of stroke.points) {
+                minX = Math.min(minX, point.x);
+                minY = Math.min(minY, point.y);
+                maxX = Math.max(maxX, point.x);
+                maxY = Math.max(maxY, point.y);
             }
+
+            const padding = 3;
+            ctx.strokeRect(
+                minX - padding, minY - padding,
+                maxX - minX + 2 * padding,
+                maxY - minY + 2 * padding
+            );
         });
 
-        ctx.setLineDash([]);
+        ctx.restore();
     }
 }
