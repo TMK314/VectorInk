@@ -196,7 +196,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             const dot = document.createElementNS(ns, 'circle');
             dot.setAttribute('cx', String(grid.size / 2));
             dot.setAttribute('cy', String(grid.size / 2));
-            dot.setAttribute('r', '1');
+            dot.setAttribute('r', String(grid.lineWidth ?? 0.5));
             dot.setAttribute('fill', gridColor);
             dot.setAttribute('opacity', String(grid.opacity));
             pat.appendChild(dot);
@@ -209,7 +209,8 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             path.setAttribute('d', d);
             path.setAttribute('fill', 'none');
             path.setAttribute('stroke', gridColor);
-            path.setAttribute('stroke-width', '2');
+            path.setAttribute('stroke-width', String(grid.lineWidth ?? 0.5));
+            console.log('stroke-width: ', String(grid.lineWidth ?? 0.5));
             path.setAttribute('opacity', String(grid.opacity));
             pat.appendChild(path);
         }
@@ -459,16 +460,52 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         });
         this.toolbar.appendChild(gridTypeSelect);
 
+        // Grid color
+        const gridColorInput = document.createElement('input');
+        gridColorInput.type = 'color';
+        gridColorInput.value = ds?.grid?.color ?? '#e0e0e0';
+        gridColorInput.title = 'Grid color';
+        gridColorInput.style.width = '30px';
+        gridColorInput.style.height = '22px';
+        this.toolbar.appendChild(gridColorInput);
+
+        // Grid opacity
+        const gridOpacityInput = document.createElement('input');
+        gridOpacityInput.type = 'range';
+        gridOpacityInput.min = '0';
+        gridOpacityInput.max = '100';
+        gridOpacityInput.value = String((ds?.grid?.opacity ?? 0.5) * 100);
+        gridOpacityInput.style.width = '50px';
+        gridOpacityInput.title = 'Grid opacity';
+        this.toolbar.appendChild(gridOpacityInput);
+
+        // Grid line width
+        const gridLineWidthInput = document.createElement('input');
+        gridLineWidthInput.type = 'range';
+        gridLineWidthInput.min = '0.1';
+        gridLineWidthInput.max = '5';
+        gridLineWidthInput.step = '0.1';
+        gridLineWidthInput.value = String(ds?.grid?.lineWidth ?? 0.5);
+        gridLineWidthInput.style.width = '50px';
+        gridLineWidthInput.title = 'Grid line width';
+        this.toolbar.appendChild(gridLineWidthInput);
+
         const updateGrid = () => {
             const b = this.blocks[this.currentBlockIndex];
             if (!b) return;
             const settings = this.ensureDisplaySettings(b);
             settings.grid.enabled = gridCheck.checked;
             settings.grid.type = gridTypeSelect.value as any;
+            settings.grid.color = gridColorInput.value;
+            settings.grid.opacity = parseInt(gridOpacityInput.value) / 100;
+            settings.grid.lineWidth = parseFloat(gridLineWidthInput.value);
             this.redrawCurrentBlock();
         };
         gridCheck.addEventListener('change', updateGrid);
         gridTypeSelect.addEventListener('change', updateGrid);
+        gridColorInput.addEventListener('change', updateGrid);
+        gridOpacityInput.addEventListener('change', updateGrid);
+        gridLineWidthInput.addEventListener('change', updateGrid);
 
         this.toolbar.appendChild(this.createSep());
 
@@ -483,7 +520,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     private ensureDisplaySettings(block: Block): BlockDisplaySettings {
         if (!block.displaySettings) {
             block.displaySettings = {
-                grid: { enabled: false, type: 'grid', size: 20, color: '#e0e0e0', opacity: 0.5 },
+                grid: { enabled: false, type: 'grid', size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5 },
                 useColor: true,
                 widthMultiplier: 1.0,
                 backgroundColor: '#ffffff',

@@ -776,7 +776,7 @@ export class DrawingManager {
     public getBlockDisplaySettings(block: Block): BlockDisplaySettings {
         const docGrid = this.context.document?.gridSettings ?? {
             enabled: false, type: 'grid' as const,
-            size: 20, color: '#e0e0e0', opacity: 0.5
+            size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5
         };
         return {
             grid: block.displaySettings?.grid ?? docGrid,
@@ -1423,7 +1423,7 @@ export class DrawingManager {
         ctx.globalAlpha = grid.opacity;
         ctx.strokeStyle = gridColor;
         ctx.fillStyle = gridColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = grid.lineWidth ?? 0.5;
 
         const size = grid.size;
         const width = canvas.width;

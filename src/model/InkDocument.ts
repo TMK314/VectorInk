@@ -22,7 +22,8 @@ export class InkDocument {
                     type: 'grid',
                     size: 20,
                     color: '#e0e0e0',
-                    opacity: 0.5
+                    opacity: 0.5,
+                    lineWidth: 0.5
                 }
             },
             strokes: [],

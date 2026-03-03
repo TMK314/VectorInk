@@ -95,6 +95,7 @@ export interface GridSettings {
     size: number;
     color: string;
     opacity: number;
+    lineWidth: number; // Dicke der Grid-Linien/Punkte
 }
 
 export interface BlockDisplaySettings {
