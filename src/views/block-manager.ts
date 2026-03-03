@@ -188,7 +188,46 @@ export class BlockManager {
             const target = e.target as HTMLElement;
             // Nur auswählen, wenn nicht auf interaktive Elemente geklickt wird
             if (!target.closest('select, button, input, .grid-line, .table-cell-overlay')) {
-                this.context.currentBlockIndex = index;
+                const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+                const isMultiSelectKey = isMac ? e.metaKey : e.ctrlKey;
+                const isRangeSelectKey = e.shiftKey;
+
+                if (isMultiSelectKey) {
+                    // Ctrl/Cmd+Klick: Toggle dieser Block in der Auswahl
+                    if (this.selectedBlockIndices.has(index)) {
+                        this.selectedBlockIndices.delete(index);
+                        // Wenn keine Auswahl mehr, dann diesen Block auswählen
+                        if (this.selectedBlockIndices.size === 0) {
+                            this.selectedBlockIndices.add(index);
+                            this.context.currentBlockIndex = index;
+                        } else {
+                            // Das erste Element in der Auswahl wird das Primär-Element
+                            const firstSelected = Math.min(...Array.from(this.selectedBlockIndices));
+                            this.context.currentBlockIndex = firstSelected;
+                        }
+                    } else {
+                        this.selectedBlockIndices.add(index);
+                        // Das erste Element in der Auswahl wird das Primär-Element
+                        const firstSelected = Math.min(...Array.from(this.selectedBlockIndices));
+                        this.context.currentBlockIndex = firstSelected;
+                    }
+                } else if (isRangeSelectKey) {
+                    // Shift+Klick: Bereich von currentBlockIndex zu diesem Block auswählen
+                    const start = Math.min(this.context.currentBlockIndex, index);
+                    const end = Math.max(this.context.currentBlockIndex, index);
+                    this.selectedBlockIndices.clear();
+                    for (let i = start; i <= end; i++) {
+                        this.selectedBlockIndices.add(i);
+                    }
+                    // Das erste Element wird das Primär-Element
+                    this.context.currentBlockIndex = start;
+                } else {
+                    // Normaler Klick: neue Auswahl mit nur diesem Block
+                    this.selectedBlockIndices.clear();
+                    this.selectedBlockIndices.add(index);
+                    this.context.currentBlockIndex = index;
+                }
+
                 this.renderBlocks(); // Neu rendern aktualisiert die UI komplett
                 this.context.toolbarManager?.syncToolbarToCurrentBlock();
             }

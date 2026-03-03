@@ -247,8 +247,9 @@ export class ToolbarManager {
         this.colorToggle.style.verticalAlign = 'middle';
         this.colorToggle.onchange = () => {
             this.useColorForStyling = this.colorToggle!.checked;
-            const block = this.getCurrentBlock();
-            if (block) this.ensureBlockDisplaySettings(block).useColor = this.useColorForStyling;
+            this.applyToSelectedBlocks(block => {
+                this.ensureBlockDisplaySettings(block).useColor = this.useColorForStyling;
+            });
             // BG-Picker ist nur relevant wenn useColor=true
             if (this.bgColorInput) this.bgColorInput.disabled = !this.useColorForStyling;
             new Notice(this.useColorForStyling ? 'Using color for styling' : 'Using block-based styling');
@@ -274,9 +275,9 @@ export class ToolbarManager {
         this.bgColorInput.style.verticalAlign = 'middle';
         this.bgColorInput.disabled = this.useColorForStyling;
         this.bgColorInput.oninput = () => {
-            const block = this.getCurrentBlock();
-            if (!block) return;
-            this.ensureBlockDisplaySettings(block).backgroundColor = this.bgColorInput!.value;
+            this.applyToSelectedBlocks(block => {
+                this.ensureBlockDisplaySettings(block).backgroundColor = this.bgColorInput!.value;
+            });
             this.context.drawingManager.redrawAllBlocks();
         };
         this.toolbar.appendChild(this.bgColorInput);
@@ -544,11 +545,10 @@ export class ToolbarManager {
 
         this.gridTypeSelect.onchange = (e) => {
             const type = (e.target as HTMLSelectElement).value as 'grid' | 'lines' | 'dots';
-            const block = this.getCurrentBlock();
-            if (block) {
+            this.applyToSelectedBlocks(block => {
                 const ds = this.ensureBlockDisplaySettings(block);
                 ds.grid = { ...ds.grid, type };
-            }
+            });
             if (this.context.document) this.context.document.setGridSettings({ type });
             this.context.drawingManager.redrawAllBlocks();
         };
@@ -582,11 +582,10 @@ export class ToolbarManager {
         this.gridSizeInput.style.borderRadius = '3px';
         this.gridSizeInput.onchange = (e) => {
             const size = parseInt((e.target as HTMLInputElement).value);
-            const block = this.getCurrentBlock();
-            if (block) {
+            this.applyToSelectedBlocks(block => {
                 const ds = this.ensureBlockDisplaySettings(block);
                 ds.grid = { ...ds.grid, size };
-            }
+            });
             if (this.context.document) this.context.document.setGridSettings({ size });
             this.context.drawingManager.redrawAllBlocks();
         };
@@ -615,11 +614,10 @@ export class ToolbarManager {
         this.gridOpacityInput.style.width = '50px';
         this.gridOpacityInput.onchange = (e) => {
             const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
-            const block = this.getCurrentBlock();
-            if (block) {
+            this.applyToSelectedBlocks(block => {
                 const ds = this.ensureBlockDisplaySettings(block);
                 ds.grid = { ...ds.grid, opacity };
-            }
+            });
             if (this.context.document) this.context.document.setGridSettings({ opacity });
             this.context.drawingManager.redrawAllBlocks();
         };
@@ -636,12 +634,11 @@ export class ToolbarManager {
             if (gridSizeContainer) gridSizeContainer.style.display = enabled ? 'flex' : 'none';
             if (gridOpacityContainer) gridOpacityContainer.style.display = enabled ? 'flex' : 'none';
 
-            // Immer auf Block-Ebene speichern (nicht global)
-            const block = this.getCurrentBlock();
-            if (block) {
+            // Auf Block-Ebene speichern für alle ausgewählten Blöcke
+            this.applyToSelectedBlocks(block => {
                 const ds = this.ensureBlockDisplaySettings(block);
                 ds.grid = { ...ds.grid, enabled };
-            }
+            });
             // Auch Document-Level aktualisieren als Fallback für neue Blöcke
             if (this.context.document) this.context.document.setGridSettings({ enabled });
 
@@ -706,6 +703,22 @@ export class ToolbarManager {
 
         // Grid
         this.updateGridControls();
+    }
+
+    /**
+     * Wendet eine Funktion auf alle ausgewählten Blöcke an.
+     * Falls keine Blöcke ausgewählt sind, wird nur der aktuelle Block verarbeitet.
+     */
+    private applyToSelectedBlocks(callback: (block: Block) => void): void {
+        if (this.context.blockManager.selectedBlockIndices.size === 0) {
+            const block = this.getCurrentBlock();
+            if (block) callback(block);
+        } else {
+            this.context.blockManager.selectedBlockIndices.forEach(index => {
+                const block = this.context.blocks[index];
+                if (block) callback(block);
+            });
+        }
     }
 
     private ensureBlockDisplaySettings(block: Block): BlockDisplaySettings {
