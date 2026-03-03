@@ -186,7 +186,6 @@
 }
 
 /* Stroke Selection */
-/* Stroke selection styles */
 .stroke-selection-box {
   position: absolute;
   border: 2px dashed var(--interactive-accent);

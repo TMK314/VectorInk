@@ -47,6 +47,7 @@ export class DrawingManager {
         let isDraggingSelection = false;
         let dragStartPoint: Point | null = null;
         let originalStrokePositions = new Map<string, Point[]>();
+        let originalStrokeData = new Map<string, { points: Point[], bezierCurves?: CubicBezier[] }>();
 
         const getPoint = (e: MouseEvent | TouchEvent): Point | null => {
             const rect = canvas.getBoundingClientRect();
@@ -309,27 +310,23 @@ export class DrawingManager {
             const strokeId = getStrokeAtPoint(point);
 
             if (strokeId) {
-                // Clicked on a stroke
                 if (e.shiftKey || e.ctrlKey || e.metaKey) {
-                    // Add to selection with modifier key
                     this.context.strokeSelectionManager.toggleStrokeSelection(strokeId);
+                    redrawCanvasWithSelection(); // <-- sofort
                 } else {
                     if (this.context.strokeSelectionManager.selectedStrokes.has(strokeId)) {
-                        // Start dragging selected strokes
                         startDraggingSelection(point);
                     } else {
-                        // Select single stroke
                         this.context.strokeSelectionManager.selectedStrokes.clear();
                         this.context.strokeSelectionManager.selectedStrokes.add(strokeId);
+                        redrawCanvasWithSelection(); // <-- sofort
                     }
                 }
             } else if (isPointOnSelectionBorder(point) &&
                 this.context.strokeSelectionManager.selectedStrokes.size > 0) {
-                // Clicked on selection border - start dragging
                 startDraggingSelection(point);
             } else if (isPointInsideSelection(point) &&
                 this.context.strokeSelectionManager.selectedStrokes.size > 0) {
-                // Clicked inside selection (but not on border) - also start dragging
                 startDraggingSelection(point);
             } else {
                 // Start rectangle selection
@@ -419,17 +416,18 @@ export class DrawingManager {
 
             isDraggingSelection = true;
             dragStartPoint = point;
-            originalStrokePositions.clear();
+            originalStrokeData.clear();
 
-            // Store original positions for all selected strokes
             this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
                 const stroke = this.context.document?.getStroke(strokeId);
                 if (stroke) {
-                    originalStrokePositions.set(strokeId, [...stroke.points]);
+                    originalStrokeData.set(strokeId, {
+                        points: stroke.points.map(p => ({ ...p })),
+                        bezierCurves: stroke.bezierCurves ? stroke.bezierCurves.map(c => ({ ...c })) : undefined
+                    });
                 }
             });
 
-            // Show move cursor
             canvas.style.cursor = 'move';
         };
 
@@ -439,24 +437,23 @@ export class DrawingManager {
             const dx = point.x - dragStartPoint.x;
             const dy = point.y - dragStartPoint.y;
 
-            // Update strokes in memory (for preview)
             this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
-                const originalPoints = originalStrokePositions.get(strokeId);
-                if (!originalPoints) return;
+                const original = originalStrokeData.get(strokeId);
+                if (!original) return;
 
                 const stroke = this.context.document?.getStroke(strokeId);
                 if (!stroke) return;
 
-                // Temporarily update for preview
-                stroke.points = originalPoints.map(p => ({
+                // Punkte aus den Originaldaten verschieben
+                stroke.points = original.points.map(p => ({
                     ...p,
                     x: p.x + dx,
                     y: p.y + dy
                 }));
 
-                // Update bezier curves if they exist
-                if (stroke.bezierCurves) {
-                    stroke.bezierCurves = stroke.bezierCurves.map(curve => ({
+                // Bézier-Kurven aus den Originaldaten verschieben
+                if (original.bezierCurves) {
+                    stroke.bezierCurves = original.bezierCurves.map(curve => ({
                         ...curve,
                         p0: { ...curve.p0, x: curve.p0.x + dx, y: curve.p0.y + dy },
                         p1: { ...curve.p1, x: curve.p1.x + dx, y: curve.p1.y + dy },
@@ -472,55 +469,26 @@ export class DrawingManager {
         const endDraggingSelection = () => {
             if (!isDraggingSelection || !this.context.document) return;
 
-            // Calculate final offset
-            const dx = dragStartPoint ? this.dragOffset.x : 0;
-            const dy = dragStartPoint ? this.dragOffset.y : 0;
-
-            // Update document with final positions
+            // Endgültige Positionen im Dokument speichern
             this.context.strokeSelectionManager.selectedStrokes.forEach(strokeId => {
-                const originalPoints = originalStrokePositions.get(strokeId);
-                if (!originalPoints) return;
-
                 const stroke = this.context.document?.getStroke(strokeId);
-                if (!stroke) return;
-
-                // Set final position
-                stroke.points = originalPoints.map(p => ({
-                    ...p,
-                    x: p.x + dx,
-                    y: p.y + dy
-                }));
-
-                // Update bezier curves if they exist
-                if (stroke.bezierCurves) {
-                    stroke.bezierCurves = stroke.bezierCurves.map(curve => ({
-                        ...curve,
-                        p0: { ...curve.p0, x: curve.p0.x + dx, y: curve.p0.y + dy },
-                        p1: { ...curve.p1, x: curve.p1.x + dx, y: curve.p1.y + dy },
-                        p2: { ...curve.p2, x: curve.p2.x + dx, y: curve.p2.y + dy },
-                        p3: { ...curve.p3, x: curve.p3.x + dx, y: curve.p3.y + dy }
-                    }));
-                }
-
-                // Update in document
-                if (this.context.document)
-                    this.context.document.updateStroke(strokeId, {
+                if (stroke) {
+                    this.context.document?.updateStroke(strokeId, {
                         points: stroke.points,
                         bezierCurves: stroke.bezierCurves
                     });
+                }
             });
 
             isDraggingSelection = false;
             dragStartPoint = null;
-            originalStrokePositions.clear();
+            originalStrokeData.clear();
 
-            // Update block size
             const block = this.context.blocks[blockIndex];
             if (block) {
                 this.adjustBlockSize(block.id);
             }
 
-            // Save document
             this.context.saveDocument();
             new Notice(`Moved ${this.context.strokeSelectionManager.selectedStrokes.size} stroke(s)`);
         };
@@ -529,66 +497,6 @@ export class DrawingManager {
             const block = this.context.blocks[blockIndex];
             if (block) {
                 this.drawBlockStrokes(canvas, block);
-                drawSelectionHighlights(canvas, block);
-            }
-        };
-
-        const drawSelectionHighlights = (canvas: HTMLCanvasElement, block: Block) => {
-            if (!this.context.document || this.context.strokeSelectionManager.selectedStrokes.size === 0) return;
-
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-
-            // Draw bounding box around entire selection
-            const bbox = this.context.strokeSelectionManager.getSelectedStrokesBoundingBox();
-            if (bbox) {
-                ctx.strokeStyle = 'var(--interactive-accent)';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([5, 3]);
-
-                const padding = 5;
-                ctx.strokeRect(
-                    bbox.x - padding, bbox.y - padding,
-                    bbox.width + 2 * padding,
-                    bbox.height + 2 * padding
-                );
-
-                ctx.setLineDash([]);
-
-                // Draw grab handles on corners
-                if (!isDraggingSelection) {
-                    ctx.fillStyle = 'var(--interactive-accent)';
-                    const handleSize = 8;
-
-                    // Top-left
-                    ctx.fillRect(
-                        bbox.x - padding - handleSize / 2,
-                        bbox.y - padding - handleSize / 2,
-                        handleSize,
-                        handleSize
-                    );
-                    // Top-right
-                    ctx.fillRect(
-                        bbox.x + bbox.width + padding - handleSize / 2,
-                        bbox.y - padding - handleSize / 2,
-                        handleSize,
-                        handleSize
-                    );
-                    // Bottom-left
-                    ctx.fillRect(
-                        bbox.x - padding - handleSize / 2,
-                        bbox.y + bbox.height + padding - handleSize / 2,
-                        handleSize,
-                        handleSize
-                    );
-                    // Bottom-right
-                    ctx.fillRect(
-                        bbox.x + bbox.width + padding - handleSize / 2,
-                        bbox.y + bbox.height + padding - handleSize / 2,
-                        handleSize,
-                        handleSize
-                    );
-                }
             }
         };
 
@@ -822,7 +730,11 @@ export class DrawingManager {
                 this.drawLinearStroke(ctx, stroke.points, displayStyle);
             }
         }
+
+        // Selektion immer nach den Strichen zeichnen
+        this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
     }
+
 
     private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {
         console.log('simplifyStroke called with:', points.length, 'points, epsilon:', epsilon);
