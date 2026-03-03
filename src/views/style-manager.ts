@@ -8,13 +8,22 @@ export class StyleManager {
         this.context = context;
     }
 
-    public getCalculatedStrokeStyle(blockType: BlockType, originalStyle: StrokeStyle): StrokeStyle {
+    public getCalculatedStrokeStyle(
+        blockType: BlockType,
+        originalStyle: StrokeStyle,
+        useColor?: boolean,
+        widthMultiplier?: number
+    ): StrokeStyle {
         const isDrawing = blockType === 'drawing';
 
         if (isDrawing) {
+            // Drawing-Blöcke: gespeicherte Strichdicke (kein typeMultiplier), aber useColor beachten
+            const effectiveUseColor = useColor ?? this.context.toolbarManager?.useColorForStyling ?? true;
             return {
                 ...originalStyle,
-                color: this.resolveCanvasColor(originalStyle.color)
+                color: effectiveUseColor
+                    ? this.resolveCanvasColor(originalStyle.color)
+                    : this.getThemeAdaptiveColor('#000000'),
             };
         }
 
@@ -33,11 +42,13 @@ export class StyleManager {
         }
 
         // Multiplikator anwenden
-        baseWidth *= this.context.drawingManager?.widthMultiplier || 1.0;
+        const effectiveMultiplier = widthMultiplier ?? this.context.drawingManager?.widthMultiplier ?? 1.0;
+        baseWidth *= effectiveMultiplier;
 
+        const effectiveUseColor = useColor ?? this.context.toolbarManager?.useColorForStyling ?? true;
         const style: StrokeStyle = {
             width: baseWidth,
-            color: this.context.toolbarManager?.useColorForStyling
+            color: effectiveUseColor
                 ? this.resolveCanvasColor(originalStyle.color)
                 : this.getThemeAdaptiveColor('#000000'),
             semantic: originalStyle.semantic,

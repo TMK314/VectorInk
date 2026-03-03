@@ -39,6 +39,7 @@ export interface Block {
     order: number;
     textContent?: string;
     textContentChanged?: boolean;
+    displaySettings?: BlockDisplaySettings;
 }
 
 export interface PageSettings {
@@ -94,4 +95,12 @@ export interface GridSettings {
     size: number;
     color: string;
     opacity: number;
+}
+
+export interface BlockDisplaySettings {
+    grid: GridSettings;
+    useColor: boolean;
+    widthMultiplier: number;
+    /** Hintergrundfarbe des Blocks. Wird nur verwendet wenn useColor === false. */
+    backgroundColor?: string;
 }

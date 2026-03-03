@@ -1,4 +1,4 @@
-import { BlockType, StrokeStyle } from '../types';
+import { Block, BlockDisplaySettings, BlockType, StrokeStyle } from '../types';
 import { InkView } from './InkView';
 import { Notice } from 'obsidian';
 
@@ -18,6 +18,12 @@ export class ToolbarManager {
     private gridTypeSelect: HTMLSelectElement | null = null;
     private gridSizeInput: HTMLInputElement | null = null;
     private gridOpacityInput: HTMLInputElement | null = null;
+
+    // Block display controls (updated on block switch via syncToolbarToCurrentBlock)
+    private colorToggle: HTMLInputElement | null = null;
+    private bgColorInput: HTMLInputElement | null = null;
+    private widthMultiplierInput: HTMLInputElement | null = null;
+    private multiplierValue: HTMLSpanElement | null = null;
 
     constructor(context: InkView) {
         this.context = context;
@@ -233,19 +239,47 @@ export class ToolbarManager {
         colorToggleLabel.style.fontSize = '12px';
         colorToggleContainer.appendChild(colorToggleLabel);
 
-        const colorToggle = document.createElement('input');
-        colorToggle.type = 'checkbox';
-        colorToggle.checked = this.useColorForStyling;
-        colorToggle.style.transform = 'scale(0.9)';
-        colorToggle.style.verticalAlign = 'middle';
-        colorToggle.onchange = (e) => {
-            this.useColorForStyling = (e.target as HTMLInputElement).checked;
-            this.context.blockManager.renderBlocks();
+        this.colorToggle = document.createElement('input');
+        this.colorToggle.type = 'checkbox';
+        this.useColorForStyling = this.getCurrentBlock()?.displaySettings?.useColor ?? true;
+        this.colorToggle.checked = this.useColorForStyling;
+        this.colorToggle.style.transform = 'scale(0.9)';
+        this.colorToggle.style.verticalAlign = 'middle';
+        this.colorToggle.onchange = () => {
+            this.useColorForStyling = this.colorToggle!.checked;
+            const block = this.getCurrentBlock();
+            if (block) this.ensureBlockDisplaySettings(block).useColor = this.useColorForStyling;
+            // BG-Picker ist nur relevant wenn useColor=true
+            if (this.bgColorInput) this.bgColorInput.disabled = !this.useColorForStyling;
             new Notice(this.useColorForStyling ? 'Using color for styling' : 'Using block-based styling');
+            this.context.drawingManager.redrawAllBlocks();
         };
-        colorToggleContainer.appendChild(colorToggle);
+        colorToggleContainer.appendChild(this.colorToggle);
 
         this.toolbar.appendChild(colorToggleContainer);
+
+        // Hintergrundfarbe (pro Block, nur wirksam wenn useColor=false)
+        const bgColorLabel = document.createElement('span');
+        bgColorLabel.textContent = 'BG:';
+        bgColorLabel.style.fontSize = '12px';
+        this.toolbar.appendChild(bgColorLabel);
+
+        this.bgColorInput = document.createElement('input');
+        this.bgColorInput.type = 'color';
+        this.bgColorInput.value = this.getCurrentBlock()?.displaySettings?.backgroundColor ?? '#ffffff';
+        this.bgColorInput.title = 'Hintergrundfarbe (nur bei Use Color = aus)';
+        this.bgColorInput.style.width = '30px';
+        this.bgColorInput.style.height = '22px';
+        this.bgColorInput.style.cursor = 'pointer';
+        this.bgColorInput.style.verticalAlign = 'middle';
+        this.bgColorInput.disabled = this.useColorForStyling;
+        this.bgColorInput.oninput = () => {
+            const block = this.getCurrentBlock();
+            if (!block) return;
+            this.ensureBlockDisplaySettings(block).backgroundColor = this.bgColorInput!.value;
+            this.context.drawingManager.redrawAllBlocks();
+        };
+        this.toolbar.appendChild(this.bgColorInput);
 
         // Width multiplier
         this.toolbar.appendChild(this.createSeparator());
@@ -255,35 +289,32 @@ export class ToolbarManager {
         multiplierLabel.style.fontSize = '12px';
         this.toolbar.appendChild(multiplierLabel);
 
-        const widthMultiplierInput = document.createElement('input');
-        widthMultiplierInput.type = 'range';
-        widthMultiplierInput.min = '0.5';
-        widthMultiplierInput.max = '4.0';
-        widthMultiplierInput.step = '0.1';
-        widthMultiplierInput.value = '1';
-        widthMultiplierInput.style.width = '60px';
-        widthMultiplierInput.style.verticalAlign = 'middle';
+        this.widthMultiplierInput = document.createElement('input');
+        this.widthMultiplierInput.type = 'range';
+        this.widthMultiplierInput.min = '0.5';
+        this.widthMultiplierInput.max = '4.0';
+        this.widthMultiplierInput.step = '0.1';
+        this.widthMultiplierInput.value = '1';
+        this.widthMultiplierInput.style.width = '60px';
+        this.widthMultiplierInput.style.verticalAlign = 'middle';
 
-        const multiplierValue = document.createElement('span');
-        multiplierValue.textContent = ` (${widthMultiplierInput.value}x)`;
-        multiplierValue.style.fontSize = '12px';
+        this.multiplierValue = document.createElement('span');
+        this.multiplierValue.textContent = ` (${this.widthMultiplierInput.value}x)`;
+        this.multiplierValue.style.fontSize = '12px';
 
-        widthMultiplierInput.oninput = (e) => {
-            const value = parseFloat((e.target as HTMLInputElement).value);
+        this.widthMultiplierInput.oninput = () => {
+            const value = parseFloat(this.widthMultiplierInput!.value);
             this.context.drawingManager.widthMultiplier = value;
-            multiplierValue.textContent = ` (${value.toFixed(1)}x)`;
+            const block = this.getCurrentBlock();
+            if (block) this.ensureBlockDisplaySettings(block).widthMultiplier = value;
+            this.multiplierValue!.textContent = ` (${value.toFixed(1)}x)`;
             this.context.drawingManager.redrawAllBlocks();
         };
 
-        widthMultiplierInput.onchange = (e) => {
-            const value = parseFloat((e.target as HTMLInputElement).value);
-            this.context.drawingManager.widthMultiplier = value;
-            multiplierValue.textContent = ` (${value.toFixed(1)}x)`;
-            this.context.drawingManager.redrawAllBlocks();
-        };
+        // onchange = oninput (redundant assignment removed)
 
-        this.toolbar.appendChild(widthMultiplierInput);
-        this.toolbar.appendChild(multiplierValue);
+        this.toolbar.appendChild(this.widthMultiplierInput);
+        this.toolbar.appendChild(this.multiplierValue);
 
         // Epsilon setting
         this.toolbar.appendChild(this.createSeparator());
@@ -457,17 +488,6 @@ export class ToolbarManager {
         this.gridEnabledCheckbox.type = 'checkbox';
         this.gridEnabledCheckbox.title = 'Toggle grid';
         this.gridEnabledCheckbox.checked = gridSettings.enabled;
-        this.gridEnabledCheckbox.onchange = (e) => {
-            if (this.context.document) {
-                this.context.document.setGridSettings({
-                    enabled: (e.target as HTMLInputElement).checked
-                });
-                this.context.drawingManager.redrawAllBlocks();
-            } else {
-                // Falls document noch nicht geladen, zeichne trotzdem neu
-                this.context.drawingManager.redrawAllBlocks();
-            }
-        };
 
         const gridLabel = document.createElement('span');
         gridLabel.textContent = 'Grid';
@@ -523,11 +543,14 @@ export class ToolbarManager {
         });
 
         this.gridTypeSelect.onchange = (e) => {
-            if (this.context.document) {
-                const type = (e.target as HTMLSelectElement).value as 'grid' | 'lines' | 'dots';
-                this.context.document.setGridSettings({ type });
-                this.context.drawingManager.redrawAllBlocks();
+            const type = (e.target as HTMLSelectElement).value as 'grid' | 'lines' | 'dots';
+            const block = this.getCurrentBlock();
+            if (block) {
+                const ds = this.ensureBlockDisplaySettings(block);
+                ds.grid = { ...ds.grid, type };
             }
+            if (this.context.document) this.context.document.setGridSettings({ type });
+            this.context.drawingManager.redrawAllBlocks();
         };
 
         gridTypeContainer.appendChild(this.gridTypeSelect);
@@ -558,11 +581,14 @@ export class ToolbarManager {
         this.gridSizeInput.style.border = '1px solid var(--background-modifier-border)';
         this.gridSizeInput.style.borderRadius = '3px';
         this.gridSizeInput.onchange = (e) => {
-            if (this.context.document) {
-                const size = parseInt((e.target as HTMLInputElement).value);
-                this.context.document.setGridSettings({ size });
-                this.context.drawingManager.redrawAllBlocks();
+            const size = parseInt((e.target as HTMLInputElement).value);
+            const block = this.getCurrentBlock();
+            if (block) {
+                const ds = this.ensureBlockDisplaySettings(block);
+                ds.grid = { ...ds.grid, size };
             }
+            if (this.context.document) this.context.document.setGridSettings({ size });
+            this.context.drawingManager.redrawAllBlocks();
         };
 
         gridSizeContainer.appendChild(this.gridSizeInput);
@@ -588,31 +614,37 @@ export class ToolbarManager {
         this.gridOpacityInput.value = (gridSettings.opacity * 100).toString();
         this.gridOpacityInput.style.width = '50px';
         this.gridOpacityInput.onchange = (e) => {
-            if (this.context.document) {
-                const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
-                this.context.document.setGridSettings({ opacity });
-                this.context.drawingManager.redrawAllBlocks();
+            const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
+            const block = this.getCurrentBlock();
+            if (block) {
+                const ds = this.ensureBlockDisplaySettings(block);
+                ds.grid = { ...ds.grid, opacity };
             }
+            if (this.context.document) this.context.document.setGridSettings({ opacity });
+            this.context.drawingManager.redrawAllBlocks();
         };
 
         gridOpacityContainer.appendChild(this.gridOpacityInput);
         this.gridContainer.appendChild(gridOpacityContainer);
 
-        // Event für Checkbox, um andere Controls ein/auszublenden
+        // Einziger onchange-Handler: speichert Block-Settings, blendet Sub-Controls ein/aus, zeichnet neu
         this.gridEnabledCheckbox.onchange = (e) => {
             const enabled = (e.target as HTMLInputElement).checked;
 
-            // Andere Grid-Controls ein/ausblenden
+            // Sub-Controls ein-/ausblenden
             if (gridTypeContainer) gridTypeContainer.style.display = enabled ? 'flex' : 'none';
             if (gridSizeContainer) gridSizeContainer.style.display = enabled ? 'flex' : 'none';
             if (gridOpacityContainer) gridOpacityContainer.style.display = enabled ? 'flex' : 'none';
 
-            // Grid-Einstellung speichern
-            if (this.context.document) {
-                this.context.document.setGridSettings({ enabled });
+            // Immer auf Block-Ebene speichern (nicht global)
+            const block = this.getCurrentBlock();
+            if (block) {
+                const ds = this.ensureBlockDisplaySettings(block);
+                ds.grid = { ...ds.grid, enabled };
             }
+            // Auch Document-Level aktualisieren als Fallback für neue Blöcke
+            if (this.context.document) this.context.document.setGridSettings({ enabled });
 
-            // Canvas neu zeichnen
             this.context.drawingManager.redrawAllBlocks();
         };
 
@@ -623,23 +655,15 @@ export class ToolbarManager {
     public updateGridControls(): void {
         if (!this.context.document) return;
 
-        const grid = this.context.document.gridSettings;
+        const block = this.getCurrentBlock();
 
-        if (this.gridEnabledCheckbox) {
-            this.gridEnabledCheckbox.checked = grid.enabled;
-        }
+        const grid = block?.displaySettings?.grid ?? this.context.document?.gridSettings;
+        if (!grid) return;
 
-        if (this.gridTypeSelect) {
-            this.gridTypeSelect.value = grid.type;
-        }
-
-        if (this.gridSizeInput) {
-            this.gridSizeInput.value = grid.size.toString();
-        }
-
-        if (this.gridOpacityInput) {
-            this.gridOpacityInput.value = (grid.opacity * 100).toString();
-        }
+        if (this.gridEnabledCheckbox) this.gridEnabledCheckbox.checked = grid.enabled;
+        if (this.gridTypeSelect) this.gridTypeSelect.value = grid.type;
+        if (this.gridSizeInput) this.gridSizeInput.value = grid.size.toString();
+        if (this.gridOpacityInput) this.gridOpacityInput.value = (grid.opacity * 100).toString();
 
         // Andere Controls entsprechend ein/ausblenden
         const gridContainer = this.gridContainer;
@@ -652,5 +676,52 @@ export class ToolbarManager {
             if (gridSizeContainer) gridSizeContainer.style.display = grid.enabled ? 'flex' : 'none';
             if (gridOpacityContainer) gridOpacityContainer.style.display = grid.enabled ? 'flex' : 'none';
         }
+    }
+
+    private getCurrentBlock(): Block | undefined {
+        return this.context.blocks[this.context.currentBlockIndex];
+    }
+
+    /**
+     * Synchronisiert alle Toolbar-Controls mit dem aktuell ausgewählten Block.
+     * Muss nach jedem Blockwechsel aufgerufen werden.
+     */
+    public syncToolbarToCurrentBlock(): void {
+        const block = this.getCurrentBlock();
+        const ds = block?.displaySettings;
+
+        // Use Color
+        const useColor = ds?.useColor ?? this.useColorForStyling;
+        this.useColorForStyling = useColor;
+        if (this.colorToggle) this.colorToggle.checked = useColor;
+        if (this.bgColorInput) {
+            this.bgColorInput.disabled = useColor;
+            this.bgColorInput.value = ds?.backgroundColor ?? '#ffffff';
+        }
+
+        // Zoom / widthMultiplier
+        const mult = ds?.widthMultiplier ?? this.context.drawingManager?.widthMultiplier ?? 1.0;
+        if (this.widthMultiplierInput) this.widthMultiplierInput.value = String(mult);
+        if (this.multiplierValue) this.multiplierValue.textContent = ` (${mult.toFixed(1)}x)`;
+
+        // Grid
+        this.updateGridControls();
+    }
+
+    private ensureBlockDisplaySettings(block: Block): BlockDisplaySettings {
+        if (!block.displaySettings) {
+            block.displaySettings = {
+                grid: {
+                    ...(this.context.document?.gridSettings ?? {
+                        enabled: false, type: 'grid' as const,
+                        size: 20, color: '#e0e0e0', opacity: 0.5
+                    })
+                },
+                useColor: this.useColorForStyling,
+                widthMultiplier: this.context.drawingManager?.widthMultiplier ?? 1.0,
+                backgroundColor: '#ffffff',
+            };
+        }
+        return block.displaySettings;
     }
 }

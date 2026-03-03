@@ -392,34 +392,50 @@
     background: #ffffff;
 }
 
-/* ── Ink Embed (eingebettet in Markdown) ─────────────────── */
+/* ── Ink Embed ──────────────────────────────────────────────── */
 
 .ink-embed {
     border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
+    border-radius: 6px;
     overflow: hidden;
-    margin: 8px 0;
-    background: var(--background-primary);
+    margin: 4px 0;
+    cursor: pointer;
 }
 
-.ink-embed-header {
+.ink-embed--edit {
+    border-color: var(--interactive-accent);
+    cursor: default;
+}
+
+.ink-embed-preview {
+    display: flex;
+    flex-direction: column;   /* Blöcke sequenziell untereinander */
+    gap: 0;
+    background: var(--background-primary);
+    padding: 4px;
+}
+
+.ink-embed-placeholder {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+/* Toolbar */
+.ink-embed-toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
+    gap: 6px;
+    padding: 5px 8px;
     background: var(--background-secondary);
     border-bottom: 1px solid var(--background-modifier-border);
-    font-size: 0.85em;
+    flex-wrap: wrap;
 }
 
-.ink-embed-title {
-    color: var(--text-muted);
-    font-weight: 500;
-}
-
-.ink-embed-edit-btn {
-    font-size: 0.8em;
-    padding: 2px 8px;
+.ink-embed-tool-btn {
+    padding: 3px 8px;
+    font-size: 12px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
     background: var(--interactive-normal);
@@ -427,17 +443,61 @@
     cursor: pointer;
 }
 
-.ink-embed-edit-btn:hover {
+.ink-embed-tool-btn.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.ink-embed-tool-btn:hover:not(.active) {
     background: var(--interactive-hover);
 }
 
-.ink-embed-canvas {
-    padding: 8px;
+.ink-embed-color {
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 3px;
     cursor: pointer;
+}
+
+.ink-embed-width {
+    width: 70px;
+    accent-color: var(--interactive-accent);
+}
+
+.ink-embed-sep {
+    color: var(--background-modifier-border);
+    user-select: none;
+}
+
+/* Blöcke */
+.ink-embed-blocks {
+    display: flex;
+    flex-direction: column;   /* Sequenziell, kein Overlap */
+    gap: 4px;
+    padding: 4px;
+    background: var(--background-primary);
+}
+
+.ink-embed-block {
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+.ink-embed-block.selected {
+    border-color: var(--interactive-accent);
+}
+
+.ink-embed-block canvas {
+    display: block;
+    width: 100% !important;   /* Breite immer fixed */
+    border-radius: 3px;
 }
 
 .ink-embed-error {
     color: var(--text-error);
-    padding: 8px 12px;
+    padding: 6px 10px;
     font-size: 0.85em;
 }

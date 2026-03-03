@@ -1,4 +1,4 @@
-import { Plugin, Notice, WorkspaceLeaf, TFile, MarkdownPostProcessorContext } from 'obsidian';
+import { Plugin, Notice, WorkspaceLeaf, TFile, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
 import { VectorInkSettings, DEFAULT_SETTINGS, VectorInkSettingTab } from './settings';
 import { InkEmbedRenderer } from './views/InkEmbedRenderer';
@@ -18,34 +18,40 @@ export default class VectorInkPlugin extends Plugin {
 		this.registerExtensions(['ink'], INK_VIEW_TYPE);
 
 		// Markdown Post-Processor: ![[datei.ink]] eingebettet rendern
-		this.registerMarkdownPostProcessor(
-			async (element: HTMLElement, context: MarkdownPostProcessorContext) => {
-				// Obsidian rendert ![[...]] als .internal-embed Elemente
-				const embeds = element.querySelectorAll<HTMLElement>(
-					'.internal-embed[src$=".ink"]'
-				);
+		// Reading Mode
+		this.registerMarkdownPostProcessor((element, context) => {
+			this.processInkEmbeds(element, context.sourcePath);
+		});
 
-				for (const embedEl of Array.from(embeds)) {
-					const src = embedEl.getAttribute('src');
-					if (!src) continue;
+		// Live Preview: MutationObserver auf dem gesamten DOM
+		const observer = new MutationObserver((mutations) => {
+			for (const mutation of mutations) {
+				for (const node of Array.from(mutation.addedNodes)) {
+					if (!(node instanceof HTMLElement)) continue;
 
-					// Datei über den Vault auflösen (relativ zum aktuellen Dokument)
-					const sourcePath = context.sourcePath;
-					const inkFile = this.app.metadataCache.getFirstLinkpathDest(src, sourcePath);
-
-					if (!inkFile || !(inkFile instanceof TFile)) {
-						embedEl.createEl('p', {
-							cls: 'ink-embed-error',
-							text: `⚠ Ink file not found: ${src}`,
-						});
-						continue;
+					// Direkt ein Embed-Element
+					if (
+						node.matches?.('.internal-embed[src$=".ink"]') ||
+						node.matches?.('.cm-embed-block[src$=".ink"]')
+					) {
+						this.processInkEmbeds(node.parentElement ?? node, this.getSourcePath(node));
 					}
 
-					const renderer = new InkEmbedRenderer(this, embedEl, inkFile);
-					await renderer.render();
+					// Oder ein Container, der Embeds enthält
+					const embeds = node.querySelectorAll<HTMLElement>(
+						'.internal-embed[src$=".ink"]'
+					);
+					if (embeds.length > 0) {
+						this.processInkEmbeds(node, this.getSourcePath(node));
+					}
 				}
 			}
-		);
+		});
+
+		observer.observe(document.body, { childList: true, subtree: true });
+
+		// Observer beim Entladen aufräumen
+		this.register(() => observer.disconnect());
 
 		this.addSettingTab(new VectorInkSettingTab(this.app, this));
 
@@ -205,6 +211,37 @@ export default class VectorInkPlugin extends Plugin {
 		}
 	}
 
+	private processInkEmbeds(container: HTMLElement, sourcePath: string): void {
+		const embeds = container.matches?.('.internal-embed[src$=".ink"]')
+			? [container]
+			: Array.from(container.querySelectorAll<HTMLElement>('.internal-embed[src$=".ink"]'));
+
+		for (const embedEl of embeds) {
+			// Nicht doppelt verarbeiten
+			if (embedEl.dataset.inkProcessed === 'true') continue;
+			embedEl.dataset.inkProcessed = 'true';
+
+			const src = embedEl.getAttribute('src');
+			if (!src) continue;
+
+			const inkFile = this.app.metadataCache.getFirstLinkpathDest(src, sourcePath);
+			if (!inkFile || !(inkFile instanceof TFile)) {
+				embedEl.createEl('p', { cls: 'ink-embed-error', text: `⚠ Nicht gefunden: ${src}` });
+				continue;
+			}
+
+			const renderer = new InkEmbedRenderer(this, embedEl, inkFile);
+			renderer.load();                    // MarkdownRenderChild lifecycle
+			this.addChild(renderer);            // Plugin verwaltet den Lifecycle
+		}
+	}
+
+	private getSourcePath(el: HTMLElement): string {
+		// Obsidian schreibt den Notizpfad als data-path auf das .view-content
+		const view = el.closest<HTMLElement>('[data-path]');
+		return view?.dataset.path ?? '';
+	}
+
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
@@ -218,6 +255,7 @@ export default class VectorInkPlugin extends Plugin {
 	}
 
 	onunload() {
+		(this.app as any).embedRegistry.unregisterEmbedCreator('ink');
 		console.log('Unloading Vector Ink Plugin');
 	}
 }

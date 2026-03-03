@@ -5,6 +5,13 @@ import { Notice } from 'obsidian';
 export class BlockManager {
     private context: InkView;
 
+    /**
+     * Alle ausgewaehlten Block-Indizes.
+     * context.currentBlockIndex = primaerer Block (Toolbar-Sync).
+     * Ctrl/Cmd+Klick: Toggle. Shift+Klick: Bereich.
+     */
+    public selectedBlockIndices: Set<number> = new Set([0]);
+
     constructor(context: InkView) {
         this.context = context;
     }
@@ -22,23 +29,36 @@ export class BlockManager {
     }
 
     private createBlockElement(block: Block, index: number): HTMLElement {
-        const isSelected = index === this.context.currentBlockIndex;
+        const isPrimary     = index === this.context.currentBlockIndex;
+        const isInSelection = this.selectedBlockIndices.has(index);
+        const isSelected    = isPrimary || isInSelection;
 
         const blockEl = document.createElement('div');
         blockEl.className = 'ink-block';
-        blockEl.dataset.blockId = block.id;
-        blockEl.dataset.selected = isSelected.toString();
+        blockEl.dataset.blockId   = block.id;
         blockEl.dataset.blockType = block.type;
-        blockEl.style.position = 'relative';
-        blockEl.style.marginTop = `${isSelected ? Math.max(this.context.blockManager.blockMargins.top, 12) : this.context.blockManager.blockMargins.top}px`;
-        blockEl.style.marginBottom = `${isSelected ? Math.max(this.context.blockManager.blockMargins.bottom, 12) : this.context.blockManager.blockMargins.bottom}px`;
-        blockEl.style.border = isSelected ? '2px solid var(--interactive-accent)' : '1px solid var(--background-modifier-border)';
-        blockEl.style.borderRadius = '6px';
-        blockEl.style.background = 'var(--background-primary)';
-        blockEl.style.padding = isSelected ? '15px' : '8px';
-        blockEl.style.minHeight = isSelected ? '150px' : '100px';
-        blockEl.style.transition = 'all 0.2s ease';
-        blockEl.style.boxShadow = isSelected ? '0 2px 8px rgba(0,0,0,0.1)' : 'none';
+        blockEl.style.position      = 'relative';
+        blockEl.style.marginTop     = `${isPrimary ? Math.max(this.context.blockManager.blockMargins.top, 12) : this.context.blockManager.blockMargins.top}px`;
+        blockEl.style.marginBottom  = `${isPrimary ? Math.max(this.context.blockManager.blockMargins.bottom, 12) : this.context.blockManager.blockMargins.bottom}px`;
+        blockEl.style.borderRadius  = '6px';
+        blockEl.style.background    = 'var(--background-primary)';
+        blockEl.style.padding       = isPrimary ? '15px' : '8px';
+        blockEl.style.minHeight     = isPrimary ? '150px' : '100px';
+        blockEl.style.transition    = 'all 0.2s ease';
+        blockEl.style.userSelect    = 'none';
+        blockEl.style.cursor        = 'default';
+
+        // Rahmen: primaer = durchgezogen, Mehrfachauswahl = gestrichelt, Rest = dezent
+        if (isPrimary) {
+            blockEl.style.border    = '2px solid var(--interactive-accent)';
+            blockEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+        } else if (isInSelection) {
+            blockEl.style.border    = '1.5px dashed var(--interactive-accent)';
+            blockEl.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+        } else {
+            blockEl.style.border    = '1px solid var(--background-modifier-border)';
+            blockEl.style.boxShadow = 'none';
+        }
 
         if (isSelected) {
             const header = document.createElement('div');
@@ -170,12 +190,14 @@ export class BlockManager {
             if (!target.closest('select, button, input, .grid-line, .table-cell-overlay')) {
                 this.context.currentBlockIndex = index;
                 this.renderBlocks(); // Neu rendern aktualisiert die UI komplett
+                this.context.toolbarManager?.syncToolbarToCurrentBlock();
             }
         };
 
         blockEl.ondblclick = (e) => {
             this.context.currentBlockIndex = index;
             this.renderBlocks();
+            this.context.toolbarManager?.syncToolbarToCurrentBlock();
         };
 
         return blockEl;
@@ -286,9 +308,11 @@ export class BlockManager {
             b.order = idx;
         });
 
+        this.selectedBlockIndices.clear();
+        this.selectedBlockIndices.add(position);
         this.context.currentBlockIndex = position;
         this.renderBlocks();
-
+        this.context.toolbarManager?.syncToolbarToCurrentBlock();
         setTimeout(() => {
             const blockEl = this.context.blocksContainer?.querySelector(`.ink-block[data-block-id="${newBlock.id}"]`);
             if (blockEl) {
@@ -318,7 +342,10 @@ export class BlockManager {
         });
 
         if (select) {
-            this.context.currentBlockIndex = this.context.blocks.length - 1;
+            const newIndex = this.context.blocks.length - 1;
+            this.selectedBlockIndices.clear();
+            this.selectedBlockIndices.add(newIndex);
+            this.context.currentBlockIndex = newIndex;
         }
 
         this.renderBlocks();
@@ -339,8 +366,11 @@ export class BlockManager {
         this.context.blocks[index] = previousBlock;
         this.context.blocks[index - 1] = currentBlock;
 
+        this.selectedBlockIndices.clear();
+        this.selectedBlockIndices.add(index - 1);
         this.context.currentBlockIndex = index - 1;
         this.renderBlocks();
+        this.context.toolbarManager?.syncToolbarToCurrentBlock();
     }
 
     private moveBlockDown(index: number): void {
@@ -358,8 +388,11 @@ export class BlockManager {
         this.context.blocks[index] = nextBlock;
         this.context.blocks[index + 1] = currentBlock;
 
+        this.selectedBlockIndices.clear();
+        this.selectedBlockIndices.add(index + 1);
         this.context.currentBlockIndex = index + 1;
         this.renderBlocks();
+        this.context.toolbarManager?.syncToolbarToCurrentBlock();
     }
 
     private clearBlock(blockId: string): void {

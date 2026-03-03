@@ -1,4 +1,4 @@
-import { Point, Stroke, StrokeStyle, Block, PartialBlock } from '../types';
+import { Point, Stroke, StrokeStyle, Block, PartialBlock, BlockDisplaySettings } from '../types';
 import { BezierCurveFitter, CubicBezier } from 'bezierFitting';
 import { InkView } from './InkView';
 import { Notice } from 'obsidian';
@@ -609,7 +609,7 @@ export class DrawingManager {
             // Verwende direkt die Canvas-Koordinaten
             const blockX = point.x;
             const blockY = point.y;
-            
+
             // Je nach Tool unterschiedlich handeln
             if (this.currentTool === 'selection') {
                 startSelection(point, e);
@@ -773,6 +773,19 @@ export class DrawingManager {
         };
     }
 
+    public getBlockDisplaySettings(block: Block): BlockDisplaySettings {
+        const docGrid = this.context.document?.gridSettings ?? {
+            enabled: false, type: 'grid' as const,
+            size: 20, color: '#e0e0e0', opacity: 0.5
+        };
+        return {
+            grid: block.displaySettings?.grid ?? docGrid,
+            useColor: block.displaySettings?.useColor ?? this.context.toolbarManager?.useColorForStyling ?? true,
+            widthMultiplier: block.displaySettings?.widthMultiplier ?? this.widthMultiplier,
+            backgroundColor: block.displaySettings?.backgroundColor ?? '#ffffff',
+        };
+    }
+
     public drawBlockStrokes(canvas: HTMLCanvasElement, block: Block): void {
         if (!this.context.document) return;
 
@@ -782,9 +795,13 @@ export class DrawingManager {
         // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Draw background
+        // Draw background: theme-adaptiv bei useColor=false, sonst gespeicherte Block-Farbe
+        const ds = this.getBlockDisplaySettings(block);
         const isDark = this.context.styleManager.isDarkTheme();
-        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+        const bgColor = !ds.useColor
+            ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
+            : (ds.backgroundColor ?? '#ffffff');
+        ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Draw grid
@@ -795,7 +812,9 @@ export class DrawingManager {
             const stroke = this.context.document.strokes.find(s => s.id === strokeId);
             if (!stroke) continue;
 
-            const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(block.type, stroke.style);
+            const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
+                block.type, stroke.style, ds.useColor, ds.widthMultiplier
+            );
 
             if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
                 this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
@@ -986,7 +1005,7 @@ export class DrawingManager {
 
         if (!hasStrokes) {
             // Wenn keine Striche mehr, zurücksetzen auf Standardgröße
-            block.bbox.width =  760;
+            block.bbox.width = 760;
             block.bbox.height = 200;
         } else {
             // Berechne benötigte Größe mit Padding
@@ -1370,7 +1389,11 @@ export class DrawingManager {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
                         const isDark = this.context.styleManager.isDarkTheme();
-                        ctx.fillStyle = isDark ? '#1a1a1a' : '#ffffff';
+                        const ds = this.getBlockDisplaySettings(block);
+                        const bgColor = ds.useColor
+                            ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
+                            : (ds.backgroundColor ?? '#ffffff');
+                        ctx.fillStyle = bgColor;
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
                         this.drawBlockStrokes(canvas, block);
@@ -1382,12 +1405,12 @@ export class DrawingManager {
 
     // Grid Patern ----------------------------
     private drawGrid(canvas: HTMLCanvasElement, block: Block): void {
-        if (!this.context.document?.gridSettings.enabled) return;
+        const grid = this.getBlockDisplaySettings(block).grid;
+        if (!grid.enabled) return;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const grid = this.context.document.gridSettings;
         const isDark = this.context.styleManager.isDarkTheme();
 
         // Standard-Grid-Farbe basierend auf Theme
