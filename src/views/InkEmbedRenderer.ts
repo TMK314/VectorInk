@@ -230,63 +230,87 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         widthMultiplier = 1.0, useColor = true, isDrawing = false
     ): void {
         if (stroke.points.length < 2) return;
-        const path = document.createElementNS(ns, 'path') as SVGPathElement;
-
-        if (stroke.bezierCurves?.length) {
-            let d = `M ${stroke.bezierCurves[0]!.p0.x} ${stroke.bezierCurves[0]!.p0.y}`;
-            for (const c of stroke.bezierCurves) {
-                d += ` C ${c.p1.x} ${c.p1.y}, ${c.p2.x} ${c.p2.y}, ${c.p3.x} ${c.p3.y}`;
-            }
-            path.setAttribute('d', d);
-        } else {
-            const pts = stroke.points;
-            let d = `M ${pts[0]!.x} ${pts[0]!.y}`;
-            for (let i = 1; i < pts.length; i++) d += ` L ${pts[i]!.x} ${pts[i]!.y}`;
-            path.setAttribute('d', d);
-        }
-
-        const baseWidth = isDrawing ? stroke.style.width ?? 2 : 2;
-        const isHighlight = stroke.style.semantic === 'highlight';
-        const isBold = stroke.style.semantic === 'bold';
-        const isItalic = stroke.style.semantic === 'italic';
-
-        // bold: 1.5× zusätzlich zum block-spezifischen Multiplikator
-        let semanticMul = isBold ? 1.5 : 1.0;
-        semanticMul = isItalic ? 0.75 : semanticMul;
-
-        const effectiveWidth = isHighlight
-            ? baseWidth * 3
-            : baseWidth * widthMultiplier * semanticMul;
 
         const isDark = document.body.classList.contains('theme-dark');
         const themeColor = getComputedStyle(document.body).getPropertyValue('--text-normal').trim()
             || (isDark ? '#ffffff' : '#000000');
-
-        // CSS-Variablen auflösen (z.B. "var(--text-normal)")
         const resolveColor = (c: string): string => {
             if (!c) return themeColor;
             if (c.startsWith('var(')) {
-                const varName = c.slice(4, -1).trim();
-                return getComputedStyle(document.body).getPropertyValue(varName).trim() || themeColor;
+                const v = c.slice(4, -1).trim();
+                return getComputedStyle(document.body).getPropertyValue(v).trim() || themeColor;
             }
             return c;
         };
+        const color = useColor ? resolveColor(stroke.style.color ?? '#000000') : themeColor;
+        const baseWidth = isDrawing ? (stroke.style.width ?? 2) : 2;
+        const isHighlight = stroke.style.semantic === 'highlight';
+        const isBold = stroke.style.semantic === 'bold';
+        const semanticMul = isBold ? 1.5 : stroke.style.semantic === 'italic' ? 0.75 : 1.0;
+        const opacity = isHighlight ? 0.35 : (stroke.style.opacity ?? 1);
 
-        const color = useColor
-            ? resolveColor(stroke.style.color ?? '#000000')
-            : themeColor;
+        const effectiveBase = isHighlight ? baseWidth * 3 : baseWidth * widthMultiplier * semanticMul;
 
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', color);
-        path.setAttribute('stroke-width', String(effectiveWidth));
-        path.setAttribute('stroke-linecap', 'round');
-        path.setAttribute('stroke-linejoin', 'round');
-        if (isHighlight) {
-            path.setAttribute('stroke-opacity', '0.35');
-        } else if ((stroke.style.opacity ?? 1) < 1) {
-            path.setAttribute('stroke-opacity', String(stroke.style.opacity));
+        // Prüfen ob Druckdaten vorhanden
+        const hasPressure = stroke.bezierCurves?.length
+            ? stroke.bezierCurves.some(b => (b.p0.pressure ?? 0.5) !== 0.5 || (b.p3.pressure ?? 0.5) !== 0.5)
+            : stroke.points.some(p => (p.pressure ?? 0.5) !== 0.5);
+
+        if (!hasPressure) {
+            // Einfacher, effizienter Pfad ohne Druckvariation
+            const path = document.createElementNS(ns, 'path') as SVGPathElement;
+            let d: string;
+            if (stroke.bezierCurves?.length) {
+                d = `M ${stroke.bezierCurves[0]!.p0.x} ${stroke.bezierCurves[0]!.p0.y}`;
+                for (const c of stroke.bezierCurves)
+                    d += ` C ${c.p1.x} ${c.p1.y}, ${c.p2.x} ${c.p2.y}, ${c.p3.x} ${c.p3.y}`;
+            } else {
+                d = `M ${stroke.points[0]!.x} ${stroke.points[0]!.y}`;
+                for (let i = 1; i < stroke.points.length; i++)
+                    d += ` L ${stroke.points[i]!.x} ${stroke.points[i]!.y}`;
+            }
+            path.setAttribute('d', d);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', color);
+            path.setAttribute('stroke-width', String(effectiveBase));
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-linejoin', 'round');
+            path.setAttribute('stroke-opacity', String(opacity));
+            svg.appendChild(path);
+            return;
         }
-        svg.appendChild(path);
+
+        // Druckabhängige Segmente
+        const fitter = new BezierCurveFitter();
+        const STEPS = 10;
+
+        const renderSegment = (x1: number, y1: number, x2: number, y2: number, pressure: number) => {
+            const line = document.createElementNS(ns, 'line');
+            line.setAttribute('x1', String(x1)); line.setAttribute('y1', String(y1));
+            line.setAttribute('x2', String(x2)); line.setAttribute('y2', String(y2));
+            line.setAttribute('stroke', color);
+            line.setAttribute('stroke-width', String(effectiveBase * (0.4 + pressure * 1.2)));
+            line.setAttribute('stroke-linecap', 'round');
+            line.setAttribute('stroke-opacity', String(opacity));
+            svg.appendChild(line);
+        };
+
+        if (stroke.bezierCurves?.length) {
+            for (const bezier of stroke.bezierCurves) {
+                let prev = fitter.evaluateBezier(bezier, 0);
+                for (let i = 1; i <= STEPS; i++) {
+                    const curr = fitter.evaluateBezier(bezier, i / STEPS);
+                    renderSegment(prev.x, prev.y, curr.x, curr.y, prev.pressure ?? 0.5);
+                    prev = curr;
+                }
+            }
+        } else {
+            for (let i = 1; i < stroke.points.length; i++) {
+                const prev = stroke.points[i - 1]!;
+                const curr = stroke.points[i]!;
+                renderSegment(prev.x, prev.y, curr.x, curr.y, prev.pressure ?? 0.5);
+            }
+        }
     }
 
     // ─── Edit-Modus aktivieren ─────────────────────────────────────────────────
@@ -752,6 +776,8 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const typeMultiplier = isDrawing ? 1.0 : this.getTypeWidthMultiplier(block.type);
         const widthMultiplier = isDrawing ? 1.0 : (block.displaySettings?.widthMultiplier ?? 1.0) * typeMultiplier;
 
+        const fitter = new BezierCurveFitter();
+
         for (const strokeId of block.strokeIds) {
             const stroke = this.inkDoc.strokes.find(s => s.id === strokeId);
             if (!stroke || stroke.points.length < 2) continue;
@@ -761,30 +787,65 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
                 : (isDark ? '#ffffff' : '#000000');
             const isHighlight = stroke.style.semantic === 'highlight';
             const isBold = stroke.style.semantic === 'bold';
-            // bold: 1.5× zusätzlich zum block-spezifischen Multiplikator
-            let semanticMul = isBold ? 1.5 : 1.0;
-            semanticMul = stroke.style.semantic === 'italic' ? 0.75 : semanticMul;
-            const width = isHighlight
-                ? (stroke.style.width ?? 2) * 3
-                : (stroke.style.width ?? 2) * widthMultiplier * semanticMul;
+            const semanticMul = isBold ? 1.5 : stroke.style.semantic === 'italic' ? 0.75 : 1.0;
+            const baseWidth = stroke.style.width ?? 2;
 
-            ctx.beginPath();
             ctx.strokeStyle = color;
-            ctx.lineWidth = width;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.globalAlpha = isHighlight ? 0.35 : (stroke.style.opacity ?? 1);
 
             if (stroke.bezierCurves?.length) {
-                ctx.moveTo(stroke.bezierCurves[0]!.p0.x, stroke.bezierCurves[0]!.p0.y);
-                for (const c of stroke.bezierCurves)
-                    ctx.bezierCurveTo(c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y);
+                const hasPressure = stroke.bezierCurves.some(
+                    b => (b.p0.pressure ?? 0.5) !== 0.5 || (b.p3.pressure ?? 0.5) !== 0.5
+                );
+                if (!hasPressure) {
+                    const w = isHighlight ? baseWidth * 3 : baseWidth * widthMultiplier * semanticMul;
+                    ctx.lineWidth = w;
+                    ctx.beginPath();
+                    ctx.moveTo(stroke.bezierCurves[0]!.p0.x, stroke.bezierCurves[0]!.p0.y);
+                    for (const c of stroke.bezierCurves)
+                        ctx.bezierCurveTo(c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y);
+                    ctx.stroke();
+                } else {
+                    const STEPS = 10;
+                    for (const bezier of stroke.bezierCurves) {
+                        let prev = fitter.evaluateBezier(bezier, 0);
+                        for (let i = 1; i <= STEPS; i++) {
+                            const curr = fitter.evaluateBezier(bezier, i / STEPS);
+                            const p = prev.pressure ?? 0.5;
+                            ctx.lineWidth = (isHighlight ? baseWidth * 3 : baseWidth * widthMultiplier * semanticMul) * (0.4 + p * 1.2);
+                            ctx.beginPath();
+                            ctx.moveTo(prev.x, prev.y);
+                            ctx.lineTo(curr.x, curr.y);
+                            ctx.stroke();
+                            prev = curr;
+                        }
+                    }
+                }
             } else {
-                ctx.moveTo(stroke.points[0]!.x, stroke.points[0]!.y);
-                for (let i = 1; i < stroke.points.length; i++)
-                    ctx.lineTo(stroke.points[i]!.x, stroke.points[i]!.y);
+                const hasPressure = stroke.points.some(p => (p.pressure ?? 0.5) !== 0.5);
+                if (!hasPressure) {
+                    const w = isHighlight ? baseWidth * 3 : baseWidth * widthMultiplier * semanticMul;
+                    ctx.lineWidth = w;
+                    ctx.beginPath();
+                    ctx.moveTo(stroke.points[0]!.x, stroke.points[0]!.y);
+                    for (let i = 1; i < stroke.points.length; i++)
+                        ctx.lineTo(stroke.points[i]!.x, stroke.points[i]!.y);
+                    ctx.stroke();
+                } else {
+                    for (let i = 1; i < stroke.points.length; i++) {
+                        const prev = stroke.points[i - 1]!;
+                        const curr = stroke.points[i]!;
+                        const p = prev.pressure ?? 0.5;
+                        ctx.lineWidth = (isHighlight ? baseWidth * 3 : baseWidth * widthMultiplier * semanticMul) * (0.4 + p * 1.2);
+                        ctx.beginPath();
+                        ctx.moveTo(prev.x, prev.y);
+                        ctx.lineTo(curr.x, curr.y);
+                        ctx.stroke();
+                    }
+                }
             }
-            ctx.stroke();
             ctx.globalAlpha = 1;
         }
         ctx.restore();

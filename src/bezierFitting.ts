@@ -26,11 +26,11 @@ export class BezierCurveFitter {
 
     constructor(options: Partial<CurveFittingOptions> = {}) {
         this.options = {
-            epsilon: options.epsilon || 2.0,
-            minSegmentLength: options.minSegmentLength || 40,  // Erhöht von 20 auf 40
-            maxIterations: options.maxIterations || 5,         // Reduziert von 10 auf 5
-            curvatureThreshold: options.curvatureThreshold || 0.2,  // Erhöht von 0.1 auf 0.2
-            usePressure: options.usePressure || false
+            epsilon: options.epsilon ?? 1.5,
+            minSegmentLength: options.minSegmentLength ?? 50,
+            maxIterations: options.maxIterations ?? 8,      // war: 4 — zu wenig Rekursion
+            curvatureThreshold: options.curvatureThreshold ?? 0.25,
+            usePressure: options.usePressure ?? false
         };
     }
 
@@ -39,18 +39,11 @@ export class BezierCurveFitter {
      */
     public fitCurve(points: Point[]): CubicBezier[] {
         if (points.length < 4) {
-            // Zu wenige Punkte für kubische Bézier
             return [this.fitLineToBezier(points)];
         }
 
-        // 1. Vorverarbeitung: Parametrisierung & Rauschentkopplung
         const processedPoints = this.preprocessPoints(points);
-
-        // 2. Kurvensegmentierung anhand von Geometrie
         const segments = this.segmentByGeometry(processedPoints);
-        console.log(`Segments: ${segments.length} from ${points.length} points`);
-
-        // 3. Bézier-Fit auf jedem Segment
         const bezierSegments: CurveSegment[] = [];
 
         for (const segment of segments) {
@@ -58,12 +51,8 @@ export class BezierCurveFitter {
             bezierSegments.push(...fitted);
         }
 
-        console.log(`Bezier segments before merging: ${bezierSegments.length}`);
-
-        // 5. Explizite Kurvenreduktion (Segmentfusion)
         const mergedSegments = this.mergeSegments(bezierSegments);
-
-        console.log(`Final bezier curves: ${mergedSegments.length}`);
+        this.enforceC1Continuity(mergedSegments);
 
         return mergedSegments.map(s => s.bezier!);
     }
@@ -72,37 +61,37 @@ export class BezierCurveFitter {
      * 1. Vorverarbeitung: Parametrisierung & Rauschentkopplung
      */
     private preprocessPoints(points: Point[]): Point[] {
-        if (points.length < 3) {
-            return points;
-        }
+        if (points.length < 3) return points;
 
-        // Einfacherer Filter - weniger aggressiv
-        const filtered: Point[] = [points[0]!];
-        const n = points.length;
-
-        for (let i = 1; i < n - 1; i++) {
-            const p0 = points[i - 1];
-            const p1 = points[i];
-            const p2 = points[i + 1];
-
-            if (p0 && p1 && p2) {
-                // Sehr leichter Filter - behält mehr Originalform bei
-                filtered.push({
-                    x: (p0.x + 2 * p1.x + p2.x) / 4,
-                    y: (p0.y + 2 * p1.y + p2.y) / 4,
-                    t: p1.t,
-                    pressure: p1.pressure || 0.5
-                });
-            } else if (p1) {
-                filtered.push(p1);
+        // Schritt 1: Sehr nahe Punkte entfernen (Rauschen)
+        const minDist = 1.5;
+        const deduped: Point[] = [points[0]!];
+        for (let i = 1; i < points.length; i++) {
+            const prev = deduped[deduped.length - 1]!;
+            const curr = points[i]!;
+            if (Math.hypot(curr.x - prev.x, curr.y - prev.y) >= minDist) {
+                deduped.push(curr);
             }
         }
+        if (deduped.length < 3) return deduped;
 
-        if (points[n - 1]) {
-            filtered.push(points[n - 1]!);
+        // Schritt 2: Chaikin-ähnliche Glättung (einmal, nicht zu aggressiv)
+        const smoothed: Point[] = [deduped[0]!];
+        for (let i = 1; i < deduped.length - 1; i++) {
+            const p0 = deduped[i - 1]!;
+            const p1 = deduped[i]!;
+            const p2 = deduped[i + 1]!;
+            smoothed.push({
+                x: p0.x * 0.25 + p1.x * 0.5 + p2.x * 0.25,
+                y: p0.y * 0.25 + p1.y * 0.5 + p2.y * 0.25,
+                t: p1.t,
+                pressure: (p0.pressure ?? 0.5) * 0.25 +
+                    (p1.pressure ?? 0.5) * 0.5 +
+                    (p2.pressure ?? 0.5) * 0.25
+            });
         }
-
-        return filtered;
+        smoothed.push(deduped[deduped.length - 1]!);
+        return smoothed;
     }
 
     /**
@@ -220,16 +209,15 @@ export class BezierCurveFitter {
         last: number,
         iteration: number = 0
     ): CurveSegment[] {
-        if (iteration >= this.options.maxIterations || last - first < 4) {
+        if (last - first < 4) {
             return [this.createSegmentFromPoints(points.slice(first, last + 1))];
         }
 
-        // Versuche gesamtes Segment zu fitten
         const bezier = this.fitCubicBezier(points, first, last);
         const { maxError, splitIndex } = this.computeMaxError(points, first, last, bezier);
 
-        // Akzeptanzkriterium - mit erhöhtem Epsilon für weniger Segmente
-        if (maxError <= this.options.epsilon * 1.5) {
+        // Strikt: kein Multiplikator auf epsilon
+        if (maxError <= this.options.epsilon) {
             return [{
                 points: points.slice(first, last + 1),
                 bezier: bezier,
@@ -237,16 +225,13 @@ export class BezierCurveFitter {
             }];
         }
 
-        // Nur teilen, wenn der Fehler signifikant ist UND wir noch nicht zu viele Iterationen hatten
-        if (splitIndex === -1 || splitIndex <= first || splitIndex >= last || last - first < 8) {
-            // Zu kurz zum Teilen
+        // Rekursion aufgeben wenn zu viele Iterationen ODER zu kurz zum Teilen
+        if (iteration >= this.options.maxIterations || splitIndex <= first || splitIndex >= last || last - first < 6) {
             return [this.createSegmentFromPoints(points.slice(first, last + 1))];
         }
 
-        // Teile am Punkt mit maximalem Fehler
         const left = this.fitCubicRecursive(points, first, splitIndex, iteration + 1);
         const right = this.fitCubicRecursive(points, splitIndex, last, iteration + 1);
-
         return [...left, ...right];
     }
 
@@ -368,7 +353,6 @@ export class BezierCurveFitter {
         index: number,
         isStart: boolean
     ): { x: number; y: number } {
-
         const step = isStart ? 1 : -1;
         const limit = isStart
             ? Math.min(index + 4, points.length - 1)
@@ -384,16 +368,12 @@ export class BezierCurveFitter {
             const p0 = points[i];
             const p1 = points[i + step];
             if (!p0 || !p1) continue;
-
             dx += p1.x - p0.x;
             dy += p1.y - p0.y;
             count++;
         }
 
-        if (count === 0) {
-            return isStart ? { x: 1, y: 0 } : { x: -1, y: 0 };
-        }
-
+        if (count === 0) return isStart ? { x: 1, y: 0 } : { x: -1, y: 0 };
         const len = Math.hypot(dx, dy);
         return len > 0 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
     }
@@ -465,48 +445,36 @@ export class BezierCurveFitter {
      * 5. Segmentfusion - WENIGER AGGRESSIV
      */
     private mergeSegments(segments: CurveSegment[]): CurveSegment[] {
-        if (segments.length <= 1) {
-            return segments;
-        }
+        if (segments.length <= 1) return segments;
 
         const merged: CurveSegment[] = [segments[0]!];
 
         for (let i = 1; i < segments.length; i++) {
             const prev = merged[merged.length - 1];
             const curr = segments[i];
-
-            if (!prev || !curr) {
+            if (!prev || !curr || !prev.bezier || !curr.bezier) {
+                if (curr) merged.push(curr);
                 continue;
             }
 
-            if (!prev.bezier || !curr.bezier) {
-                merged.push(curr);
-                continue;
-            }
-
-            // Prüfe ob die Segmente klein genug sind um zusammengeführt zu werden
             const prevLength = this.segmentLength(prev.points);
             const currLength = this.segmentLength(curr.points);
 
-            // Nur kleine Segmente zusammenführen
+            // Nur kurze Segmente zusammenführen, und nur wenn Fehler innerhalb epsilon bleibt
             if (prevLength < 30 && currLength < 30) {
                 const combinedPoints = [...prev.points, ...curr.points];
                 try {
                     const combinedBezier = this.fitCubicBezier(combinedPoints, 0, combinedPoints.length - 1);
-                    const { maxError: combinedError } = this.computeMaxError(
+                    const { maxError } = this.computeMaxError(
                         combinedPoints, 0, combinedPoints.length - 1, combinedBezier
                     );
-
-                    if (combinedError <= this.options.epsilon * 2) {
-                        // Segmente zusammenführen
+                    if (maxError <= this.options.epsilon) {   // war: epsilon * 2
                         prev.points = combinedPoints;
                         prev.bezier = combinedBezier;
-                        prev.error = combinedError;
+                        prev.error = maxError;
                         continue;
                     }
-                } catch (error) {
-                    // Fehler beim Zusammenführen - separat behalten
-                }
+                } catch (_) { /* separat behalten */ }
             }
 
             merged.push(curr);
@@ -586,6 +554,45 @@ export class BezierCurveFitter {
                 error: 0
             };
         }
+    }
+
+    /**
+ * Erzwingt C1-Kontinuität an Segmentgrenzen:
+ * p2[i], p3[i]=p0[i+1], p1[i+1] werden kollinear gesetzt.
+ */
+    private enforceC1Continuity(segments: CurveSegment[]): CurveSegment[] {
+        for (let i = 0; i < segments.length - 1; i++) {
+            const curr = segments[i]?.bezier;
+            const next = segments[i + 1]?.bezier;
+            if (!curr || !next) continue;
+
+            const jx = curr.p3.x;
+            const jy = curr.p3.y;
+
+            const ox = jx - curr.p2.x;
+            const oy = jy - curr.p2.y;
+            const ix = next.p1.x - jx;
+            const iy = next.p1.y - jy;
+
+            const oLen = Math.hypot(ox, oy);
+            const iLen = Math.hypot(ix, iy);
+            if (oLen < 1e-6 || iLen < 1e-6) continue;
+
+            // Winkel zwischen den Tangenten prüfen – bei scharfer Ecke (> 90°) nicht glätten
+            const dot = (ox / oLen) * (ix / iLen) + (oy / oLen) * (iy / iLen);
+            if (dot < 0) continue; // Vorzeichen-Wechsel = beabsichtigte Ecke, unberührt lassen
+
+            const ax = ox / oLen + ix / iLen;
+            const ay = oy / oLen + iy / iLen;
+            const aLen = Math.hypot(ax, ay);
+            if (aLen < 1e-6) continue;
+            const tx = ax / aLen;
+            const ty = ay / aLen;
+
+            curr.p2 = { ...curr.p2, x: jx - tx * oLen, y: jy - ty * oLen };
+            next.p1 = { ...next.p1, x: jx + tx * iLen, y: jy + ty * iLen };
+        }
+        return segments;
     }
 
     /**

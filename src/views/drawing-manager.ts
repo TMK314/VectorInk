@@ -25,7 +25,13 @@ export class DrawingManager {
     public smoothing = 0.3;
     public epsilon = 1.0;
 
+    private _rafPending = false;
+    private _rafCanvas: HTMLCanvasElement | null = null;
+    private _rafBlock: Block | null = null;
+
     public dragOffset: Point = { x: 0, y: 0, t: 0, pressure: 0.5 };
+
+    private _strokeCache = new Map<string, HTMLCanvasElement>();
 
     // Block height expansion
     private readonly BLOCK_EXPANSION_THRESHOLD = 50;
@@ -49,26 +55,28 @@ export class DrawingManager {
         let originalStrokePositions = new Map<string, Point[]>();
         let originalStrokeData = new Map<string, { points: Point[], bezierCurves?: CubicBezier[] }>();
 
-        const getPoint = (e: MouseEvent | TouchEvent): Point | null => {
-            const rect = canvas.getBoundingClientRect();
-            let x, y;
+        let lastKnownPressure = 0.5;
 
-            if ('touches' in e) {
-                if (e.touches.length === 0) return null;
-                const touch = e.touches[0];
-                if (!touch) return null;
-                x = touch.clientX - rect.left;
-                y = touch.clientY - rect.top;
+        const getPoint = (e: PointerEvent): Point => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            let pressure: number;
+            if (e.pointerType === 'pen' || e.pointerType === 'touch') {
+                // Bei Stylus: pressure=0 auf pointerdown ignorieren, letzten Wert verwenden
+                pressure = e.pressure > 0 ? e.pressure : lastKnownPressure;
             } else {
-                x = (e as MouseEvent).clientX - rect.left;
-                y = (e as MouseEvent).clientY - rect.top;
+                // Maus: gedrückt = 0.5, nicht gedrückt = 0.5 (kein Druck-Rendering)
+                pressure = 0.5;
             }
+            if (e.pressure > 0) lastKnownPressure = e.pressure;
 
             return {
                 x: x * (canvas.width / rect.width),
                 y: y * (canvas.height / rect.height),
                 t: Date.now(),
-                pressure: 0.5
+                pressure
             };
         };
 
@@ -226,12 +234,38 @@ export class DrawingManager {
             if (!this.isDrawing || !this.context.document) return;
 
             this.isDrawing = false;
-            if (this.currentStroke.length < 2) return;
-
             const block = this.context.blocks[this.context.currentBlockIndex];
             if (!block) return;
 
+            if (this.currentStroke.length === 0) return;
+
+            const originalCount = this.currentStroke.length;
+
+            if (this.currentStroke.length === 1) {
+                const p = this.currentStroke[0]!;
+                const dot: Stroke = {
+                    id: crypto.randomUUID(),
+                    points: [p, { ...p, x: p.x + 0.1, t: p.t + 1 }],
+                    bezierCurves: [],
+                    style: { ...this.currentPenStyle },
+                    createdAt: new Date().toISOString()
+                };
+                const added = this.context.document.addStroke(dot);
+                block.strokeIds.push(added.id);
+                this.updateBlockBoundingBox(block, dot.points);
+                this.currentStroke = [];
+                lastPoint = null;
+                console.log(`Stroke: ${originalCount} → 2 points (dot)`);
+                this.invalidateBlockCache(block.id); // <-- NEU
+                return;
+            }
+
             const simplified = this.simplifyStroke(this.currentStroke, this.epsilon);
+            const finalCount = simplified.bezierCurves.length > 0
+                ? simplified.bezierCurves.length * 4
+                : simplified.points.length;
+            console.log(`Stroke: ${originalCount} raw points → ${finalCount} stored points (${simplified.bezierCurves.length} bezier curves)`);
+
             const stroke: Stroke = {
                 id: crypto.randomUUID(),
                 points: simplified.points,
@@ -242,18 +276,11 @@ export class DrawingManager {
 
             const addedStroke = this.context.document.addStroke(stroke);
             block.strokeIds.push(addedStroke.id);
-
             this.updateBlockBoundingBox(block, simplified.points);
             this.syncBlockStrokes(block);
-
             this.currentStroke = [];
             lastPoint = null;
-
-            if (simplified.bezierCurves.length > 0) {
-                console.log(`✓ Stroke saved with ${simplified.bezierCurves.length} bezier curves ` +
-                    `(${simplified.bezierCurves.length * 4} control points) ` +
-                    `instead of ${this.currentStroke.length} raw points`);
-            }
+            this.invalidateBlockCache(block.id); // <-- NEU
         };
 
         const startErasing = (point: Point) => {
@@ -434,6 +461,9 @@ export class DrawingManager {
         const updateDraggingSelection = (point: Point) => {
             if (!isDraggingSelection || !dragStartPoint || !this.context.document) return;
 
+            const block = this.context.blocks[blockIndex]; // blockIndex ist bereits im Closure vorhanden
+            if (block) this.invalidateBlockCache(block.id); // <-- NEU
+
             const dx = point.x - dragStartPoint.x;
             const dy = point.y - dragStartPoint.y;
 
@@ -501,26 +531,17 @@ export class DrawingManager {
         };
 
         // Mouse events
-        const handleMouseDown = (e: MouseEvent) => {
-            if (e.button !== 0) return; // Nur linke Maustaste
-
+        const handlePointerDown = (e: PointerEvent) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            canvas.setPointerCapture(e.pointerId); // wichtig für reibungslosen Drag
             const point = getPoint(e);
-            if (!point) return;
-
             isMouseDown = true;
             updateCursor(point);
-
             const block = this.context.blocks[blockIndex];
-
             if (!block) return;
-
-            // Verwende direkt die Canvas-Koordinaten
-            const blockX = point.x;
-            const blockY = point.y;
-
-            // Je nach Tool unterschiedlich handeln
             if (this.currentTool === 'selection') {
-                startSelection(point, e);
+                startSelection(point, e as unknown as MouseEvent);
             } else if (this.currentTool === 'eraser') {
                 startErasing(point);
             } else if (this.currentTool === 'pen') {
@@ -529,20 +550,12 @@ export class DrawingManager {
             }
         };
 
-        const handleMouseMove = (e: MouseEvent) => {
+        const handlePointerMove = (e: PointerEvent) => {
             const point = getPoint(e);
-            if (!point) return;
-
             updateCursor(point);
-
             if (this.currentTool === 'selection') {
                 if (isDraggingSelection) {
-                    this.dragOffset = {
-                        x: point.x - (dragStartPoint?.x || 0),
-                        y: point.y - (dragStartPoint?.y || 0),
-                        t: 0,
-                        pressure: 0.5
-                    };
+                    this.dragOffset = { x: point.x - (dragStartPoint?.x || 0), y: point.y - (dragStartPoint?.y || 0), t: 0, pressure: 0.5 };
                     updateDraggingSelection(point);
                 } else if (isSelectingRect) {
                     updateSelectionRect(point);
@@ -550,135 +563,48 @@ export class DrawingManager {
             } else if (this.currentTool === 'eraser' && this.isErasing) {
                 erase(point);
             } else if (this.currentTool === 'pen' && this.isDrawing) {
-                if (!lastPoint) {
-                    lastPoint = point;
-                    return;
-                }
-
+                if (!lastPoint) { lastPoint = point; return; }
                 draw(point);
                 lastPoint = point;
-
-                // Auto-Expand prüfen
                 this.checkAutoExpand(canvas, point);
             }
         };
 
-        const handleMouseUp = (e: MouseEvent) => {
+        const handlePointerUp = (e: PointerEvent) => {
             const point = getPoint(e);
+            canvas.releasePointerCapture(e.pointerId);
             isMouseDown = false;
-
             if (this.currentTool === 'selection') {
-                if (isSelectingRect && point) {
-                    endSelectionRect(point, e.shiftKey || e.ctrlKey || e.metaKey);
-                } else if (isDraggingSelection) {
-                    endDraggingSelection();
-                }
+                if (isSelectingRect) endSelectionRect(point, e.shiftKey || e.ctrlKey || e.metaKey);
+                else if (isDraggingSelection) endDraggingSelection();
             } else if (this.currentTool === 'pen') {
                 stopDrawing();
             } else if (this.currentTool === 'eraser') {
                 stopErasing();
             }
-
             lastPoint = null;
             redrawCanvasWithSelection();
         };
 
-        const handleMouseLeave = () => {
+        const handlePointerLeave = () => {
             canvas.style.cursor = 'default';
-
-            if (isMouseDown) {
-                handleMouseUp(new MouseEvent('mouseup'));
-            }
-
+            if (isMouseDown) handlePointerUp(new PointerEvent('pointerup'));
             if (isSelectingRect && selectionBox) {
-                selectionBox.remove();
-                selectionBox = null;
-                isSelectingRect = false;
-                selectionRectStart = null;
+                selectionBox.remove(); selectionBox = null;
+                isSelectingRect = false; selectionRectStart = null;
             }
         };
 
-        canvas.onmousedown = handleMouseDown;
-        canvas.onmousemove = handleMouseMove;
-        canvas.onmouseup = handleMouseUp;
-        canvas.onmouseleave = handleMouseLeave;
+        // Pointer Events (vereinheitlicht Mouse + Touch + Stylus)
+        canvas.style.touchAction = 'none'; // verhindert Browser-Scroll-Interferenz
+        canvas.addEventListener('pointerdown', handlePointerDown);
+        canvas.addEventListener('pointermove', handlePointerMove);
+        canvas.addEventListener('pointerup', handlePointerUp);
+        canvas.addEventListener('pointerleave', handlePointerLeave);
 
-        // Touch events
-        const handleTouchStart = (e: TouchEvent) => {
-            e.preventDefault();
-            const point = getPoint(e);
-            if (point) {
-                if (this.currentTool === 'eraser') {
-                    startErasing(point);
-                } else if (this.currentTool === 'pen') {
-                    startDrawing(point);
-                    lastPoint = point;
-                } else if (this.currentTool === 'selection') {
-                    // For touch, treat as click selection
-                    startSelection(point, new MouseEvent('mousedown'));
-                }
-            }
-        };
+        // Touch-Events NICHT mehr separat nötig — PointerEvent deckt alles ab
 
-        const handleTouchMove = (e: TouchEvent) => {
-            e.preventDefault();
-            const point = getPoint(e);
-            if (point) {
-                if (this.currentTool === 'eraser' && this.isErasing) {
-                    erase(point);
-                } else if (this.currentTool === 'pen' && this.isDrawing) {
-                    if (!lastPoint) {
-                        lastPoint = point;
-                        return;
-                    }
-                    draw(point);
-                    lastPoint = point;
-                    this.checkAutoExpand(canvas, point);
-                } else if (this.currentTool === 'selection') {
-                    if (isDraggingSelection) {
-                        updateDraggingSelection(point);
-                    } else if (isSelectingRect) {
-                        updateSelectionRect(point);
-                    }
-                }
-            }
-        };
-
-        const handleTouchEnd = (e: TouchEvent) => {
-            e.preventDefault();
-            if (this.currentTool === 'selection') {
-                if (isSelectingRect) {
-                    const point = getPoint(e);
-                    if (point) {
-                        endSelectionRect(point, false);
-                    }
-                } else if (isDraggingSelection) {
-                    endDraggingSelection();
-                }
-            } else if (this.currentTool === 'pen') {
-                stopDrawing();
-            } else if (this.currentTool === 'eraser') {
-                stopErasing();
-            }
-            lastPoint = null;
-        };
-
-        // Event-Listener hinzufügen
-        canvas.onmousedown = handleMouseDown;
-        canvas.onmousemove = handleMouseMove;
-        canvas.onmouseup = handleMouseUp;
-        canvas.onmouseleave = handleMouseLeave;
-
-        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-        canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-        canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
-
-        // Verhindere Kontextmenü auf Canvas
-        canvas.oncontextmenu = (e) => {
-            e.preventDefault();
-            return false;
-        };
+        canvas.oncontextmenu = (e) => { e.preventDefault(); return false; };
     }
 
     public getBlockDisplaySettings(block: Block): BlockDisplaySettings {
@@ -695,95 +621,134 @@ export class DrawingManager {
     }
 
     public drawBlockStrokes(canvas: HTMLCanvasElement, block: Block): void {
-        if (!this.context.document) return;
+        if (this.isDrawing) {
+            this._rafCanvas = canvas;
+            this._rafBlock = block;
+            if (!this._rafPending) {
+                this._rafPending = true;
+                this._perf.rafExecuted++;
+                requestAnimationFrame(() => {
+                    this._rafPending = false;
+                    if (this._rafCanvas && this._rafBlock)
+                        this._drawBlockStrokesImmediate(this._rafCanvas, this._rafBlock);
+                    this._perf.report();
+                });
+            } else {
+                this._perf.rafSkipped++;
+            }
+            return;
+        }
+        this._drawBlockStrokesImmediate(canvas, block);
+        this._perf.report();
+    }
 
+    private _drawBlockStrokesImmediate(canvas: HTMLCanvasElement, block: Block): void {
+        if (!this.context.document) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Draw background: theme-adaptiv bei useColor=false, sonst gespeicherte Block-Farbe
+        const t0 = this._perf.beginDraw(block.strokeIds.length);
         const ds = this.getBlockDisplaySettings(block);
         const isDark = this.context.styleManager.isDarkTheme();
         const bgColor = !ds.useColor
             ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
             : (ds.backgroundColor ?? '#ffffff');
+
+        // Cache holen oder neu erstellen
+        let cache = this._strokeCache.get(block.id);
+        const needsRebuild = !cache
+            || cache.width !== canvas.width
+            || cache.height !== canvas.height;
+
+        if (needsRebuild) {
+            cache = document.createElement('canvas');
+            cache.width = canvas.width;
+            cache.height = canvas.height;
+            this._strokeCache.set(block.id, cache);
+            this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
+        }
+
+        // Cache auf sichtbaren Canvas blitten
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (cache)
+            ctx.drawImage(cache, 0, 0);
+
+        // Aktuellen (noch nicht gespeicherten) Strich live zeichnen
+        if (this.isDrawing && this.currentStroke.length >= 2) {
+            const currentBlock = this.context.blocks[this.context.currentBlockIndex];
+            if (currentBlock?.id === block.id) {
+                const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
+                    block.type, this.currentPenStyle
+                );
+                this.drawLinearStroke(ctx, this.currentStroke, displayStyle);
+            }
+        }
+
+        this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
+        this._perf.endDraw(t0);
+        this._perf.report();
+    }
+
+    private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {
+        if (points.length <= 2) {
+            return { points, bezierCurves: [] };
+        }
+
+        const fitter = new BezierCurveFitter({
+            epsilon: epsilon,
+            minSegmentLength: 50,
+            usePressure: this.pressureSensitivity
+        });
+
+        try {
+            const bezierCurves = fitter.fitCurve(points);
+            const simplifiedPoints: Point[] = [];
+            for (const bezier of bezierCurves) {
+                simplifiedPoints.push(bezier.p0);
+                simplifiedPoints.push(fitter.evaluateBezier(bezier, 0.5));
+                if (bezierCurves.indexOf(bezier) === bezierCurves.length - 1) {
+                    simplifiedPoints.push(bezier.p3);
+                }
+            }
+            return { points: simplifiedPoints, bezierCurves };
+        } catch (error) {
+            return { points, bezierCurves: [] };
+        }
+    }
+
+    private _renderStrokesToCache(
+        cache: HTMLCanvasElement,
+        block: Block,
+        ds: BlockDisplaySettings,
+        bgColor: string,
+        isDark: boolean
+    ): void {
+        if (!this.context.document) return;
+        const ctx = cache.getContext('2d');
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, cache.width, cache.height);
         ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, cache.width, cache.height);
 
-        // Draw grid
-        this.drawGrid(canvas, block);
+        this.drawGrid(cache, block);
 
-        // Draw strokes
         for (const strokeId of block.strokeIds) {
             const stroke = this.context.document.strokes.find(s => s.id === strokeId);
             if (!stroke) continue;
-
             const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
                 block.type, stroke.style, ds.useColor, ds.widthMultiplier
             );
-
             if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
                 this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
             } else if (stroke.points.length >= 2) {
                 this.drawLinearStroke(ctx, stroke.points, displayStyle);
             }
         }
-
-        // Selektion immer nach den Strichen zeichnen
-        this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
     }
 
-
-    private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {
-        console.log('simplifyStroke called with:', points.length, 'points, epsilon:', epsilon);
-
-        if (points.length <= 2) {
-            console.log('Too few points, returning original');
-            return {
-                points: points,
-                bezierCurves: []
-            };
-        }
-
-        const fitter = new BezierCurveFitter({
-            epsilon: epsilon,
-            minSegmentLength: 40,
-            usePressure: this.pressureSensitivity
-        });
-
-        try {
-            const bezierCurves = fitter.fitCurve(points);
-            console.log('Generated', bezierCurves.length, 'bezier curves');
-
-            const simplifiedPoints: Point[] = [];
-
-            for (const bezier of bezierCurves) {
-                simplifiedPoints.push(bezier.p0);
-                simplifiedPoints.push(fitter.evaluateBezier(bezier, 0.5));
-
-                if (bezierCurves.indexOf(bezier) === bezierCurves.length - 1) {
-                    simplifiedPoints.push(bezier.p3);
-                }
-            }
-
-            console.log('Reduced from', points.length, 'to', simplifiedPoints.length, 'points for bounding box');
-            console.log('Storing', bezierCurves.length, 'bezier curves (each with 4 control points =',
-                bezierCurves.length * 4, 'total stored points)');
-
-            return {
-                points: simplifiedPoints,
-                bezierCurves: bezierCurves
-            };
-
-        } catch (error) {
-            console.error('Bezier fitting error:', error);
-            return {
-                points: points,
-                bezierCurves: []
-            };
-        }
+    public invalidateBlockCache(blockId: string): void {
+        this._strokeCache.delete(blockId);
     }
 
     private updateBlockBoundingBox(block: Block, points: Point[]): void {
@@ -866,8 +831,6 @@ export class DrawingManager {
 
     public resizeCanvas(canvas: HTMLCanvasElement, block: Block): void {
         const dpr = window.devicePixelRatio || 1;
-        const oldWidth = canvas.width / dpr;
-        const oldHeight = canvas.height / dpr;
 
         canvas.width = block.bbox.width * dpr;
         canvas.height = block.bbox.height * dpr;
@@ -882,13 +845,14 @@ export class DrawingManager {
         canvas.style.width = `${block.bbox.width}px`;
         canvas.style.height = `${block.bbox.height}px`;
 
-        // Block-Element-Höhe anpassen
         const blockEl = canvas.closest('.ink-block') as HTMLElement;
         if (blockEl) {
             const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
             const extraHeight = isSelected ? 120 : 80;
             blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
         }
+
+        this.invalidateBlockCache(block.id); // <-- NEU
     }
 
     public adjustBlockSizeAfterErasing(blockId: string): void {
@@ -1050,18 +1014,16 @@ export class DrawingManager {
         if (strokeIdsToRemove.length > 0) {
             const beforeCount = block.strokeIds.length;
             block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
-            const removedCount = beforeCount - block.strokeIds.length;
 
             strokeIdsToRemove.forEach(strokeId => {
                 this.context.document?.removeStroke(strokeId);
             });
 
-
+            this.invalidateBlockCache(block.id); // <-- NEU
             this.drawBlockStrokes(canvas, block);
 
             if (strokesRemoved) {
                 setTimeout(() => {
-                    // Block-Größe automatisch anpassen
                     this.adjustBlockSizeAfterErasing(block.id);
                 }, 100);
             }
@@ -1208,22 +1170,60 @@ export class DrawingManager {
     ): void {
         if (bezierCurves.length === 0) return;
 
-        ctx.strokeStyle = displayStyle.color;
-        ctx.globalAlpha = displayStyle.opacity || 1;
-        ctx.lineWidth = displayStyle.width;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+        ctx.strokeStyle = displayStyle.color;
+        ctx.globalAlpha = displayStyle.opacity ?? 1;
 
-        for (const bezier of bezierCurves) {
+        if (!this.pressureSensitivity) {
+            ctx.lineWidth = displayStyle.width;
             ctx.beginPath();
-            ctx.moveTo(bezier.p0.x, bezier.p0.y);
-            ctx.bezierCurveTo(
-                bezier.p1.x, bezier.p1.y,
-                bezier.p2.x, bezier.p2.y,
-                bezier.p3.x, bezier.p3.y
-            );
+            ctx.moveTo(bezierCurves[0]!.p0.x, bezierCurves[0]!.p0.y);
+            for (const b of bezierCurves)
+                ctx.bezierCurveTo(b.p1.x, b.p1.y, b.p2.x, b.p2.y, b.p3.x, b.p3.y);
             ctx.stroke();
+            ctx.globalAlpha = 1;
+            return;
         }
+
+        // Druck: Punkte samplen, dann Segmente gleicher Breite bündeln
+        const fitter = new BezierCurveFitter();
+        const STEPS = 6; // 6 statt 12 reicht für glatte Optik
+        const PRESSURE_BUCKET = 0.08; // Breiten innerhalb dieser Toleranz → gleicher Pfad
+
+        // Alle Samples sammeln
+        const samples: { x: number; y: number; w: number }[] = [];
+        for (const bezier of bezierCurves) {
+            for (let i = 0; i <= STEPS; i++) {
+                const pt = fitter.evaluateBezier(bezier, i / STEPS);
+                const w = Math.max(0.5, displayStyle.width * (0.3 + (pt.pressure ?? 0.5) * 1.4));
+                samples.push({ x: pt.x, y: pt.y, w });
+            }
+        }
+
+        if (samples.length < 2) { ctx.globalAlpha = 1; return; }
+
+        // Aufeinanderfolgende Samples mit ähnlicher Breite zu einem Pfad zusammenfassen
+        let batchStart = 0;
+        for (let i = 1; i < samples.length; i++) {
+            const wStart = samples[batchStart]!.w;
+            const wCurr = samples[i]!.w;
+            const isLast = i === samples.length - 1;
+
+            if (Math.abs(wCurr - wStart) > PRESSURE_BUCKET * displayStyle.width || isLast) {
+                // Batch zeichnen
+                const endIdx = isLast ? i : i - 1;
+                ctx.beginPath();
+                ctx.lineWidth = wStart;
+                ctx.moveTo(samples[batchStart]!.x, samples[batchStart]!.y);
+                for (let j = batchStart + 1; j <= endIdx; j++)
+                    ctx.lineTo(samples[j]!.x, samples[j]!.y);
+                ctx.stroke();
+                batchStart = endIdx;
+            }
+        }
+
+        ctx.globalAlpha = 1;
     }
 
     private drawLinearStroke(
@@ -1233,25 +1233,31 @@ export class DrawingManager {
     ): void {
         if (points.length < 2) return;
 
-        ctx.strokeStyle = displayStyle.color;
-        ctx.globalAlpha = displayStyle.opacity || 1;
-        ctx.lineWidth = displayStyle.width;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+        ctx.strokeStyle = displayStyle.color;
+        ctx.globalAlpha = displayStyle.opacity ?? 1;
 
-        ctx.beginPath();
-        if (points[0]) {
-            ctx.moveTo(points[0].x, points[0].y);
-
-            for (let i = 1; i < points.length; i++) {
-                const point = points[i];
-                if (point) {
-                    ctx.lineTo(point.x, point.y);
-                }
-            }
-
+        if (!this.pressureSensitivity) {
+            ctx.lineWidth = displayStyle.width;
+            ctx.beginPath();
+            ctx.moveTo(points[0]!.x, points[0]!.y);
+            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i]!.x, points[i]!.y);
             ctx.stroke();
+        } else {
+            for (let i = 1; i < points.length; i++) {
+                const prev = points[i - 1]!;
+                const curr = points[i]!;
+                const p = prev.pressure ?? 0.5;
+                ctx.beginPath();
+                ctx.lineWidth = Math.max(0.5, displayStyle.width * (0.3 + p * 1.4));
+                ctx.moveTo(prev.x, prev.y);
+                ctx.lineTo(curr.x, curr.y);
+                ctx.stroke();
+            }
         }
+
+        ctx.globalAlpha = 1;
     }
 
     public setTool(tool: 'pen' | 'eraser' | 'selection'): void {
@@ -1404,4 +1410,62 @@ export class DrawingManager {
             }
         }
     }
+
+    /** DEbug
+     * ----------------------------------
+     */
+    private _perf = {
+        frameCount: 0,
+        drawCallsThisFrame: 0,
+        lastReport: 0,
+        drawDurations: [] as number[],
+        strokeCounts: [] as number[],
+        rafSkipped: 0,
+        rafExecuted: 0,
+
+        /** Aufruf am Anfang jedes _drawBlockStrokesImmediate */
+        beginDraw(strokeCount: number) {
+            this.drawCallsThisFrame++;
+            this.strokeCounts.push(strokeCount);
+            return performance.now();
+        },
+
+        /** Aufruf am Ende von _drawBlockStrokesImmediate */
+        endDraw(start: number) {
+            this.drawDurations.push(performance.now() - start);
+        },
+
+        /** Jede Sekunde einen Report loggen */
+        report() {
+            const now = performance.now();
+            if (now - this.lastReport < 1000) return;
+            this.lastReport = now;
+
+            const avgDraw = this.drawDurations.length
+                ? (this.drawDurations.reduce((a, b) => a + b, 0) / this.drawDurations.length).toFixed(2)
+                : '—';
+            const maxDraw = this.drawDurations.length
+                ? Math.max(...this.drawDurations).toFixed(2)
+                : '—';
+            const avgStrokes = this.strokeCounts.length
+                ? (this.strokeCounts.reduce((a, b) => a + b, 0) / this.strokeCounts.length).toFixed(1)
+                : '—';
+            const maxStrokes = this.strokeCounts.length
+                ? Math.max(...this.strokeCounts)
+                : '—';
+
+            console.group('%c[InkPerf] 1s report', 'color: #4af; font-weight: bold');
+            console.log(`draws/s:       ${this.drawDurations.length}  (RAF skipped: ${this.rafSkipped}, executed: ${this.rafExecuted})`);
+            console.log(`draw ms:       avg=${avgDraw}ms  max=${maxDraw}ms`);
+            console.log(`strokes/draw:  avg=${avgStrokes}  max=${maxStrokes}`);
+            console.groupEnd();
+
+            // Reset
+            this.drawDurations = [];
+            this.strokeCounts = [];
+            this.drawCallsThisFrame = 0;
+            this.rafSkipped = 0;
+            this.rafExecuted = 0;
+        }
+    };
 }
