@@ -38,8 +38,8 @@ export class BlockManager {
         blockEl.dataset.blockId   = block.id;
         blockEl.dataset.blockType = block.type;
         blockEl.style.position      = 'relative';
-        blockEl.style.marginTop     = `${isPrimary ? Math.max(this.context.blockManager.blockMargins.top, 12) : this.context.blockManager.blockMargins.top}px`;
-        blockEl.style.marginBottom  = `${isPrimary ? Math.max(this.context.blockManager.blockMargins.bottom, 12) : this.context.blockManager.blockMargins.bottom}px`;
+        blockEl.style.marginTop     = `12px`;
+        blockEl.style.marginBottom  = `12px`;
         blockEl.style.borderRadius  = '6px';
         blockEl.style.background    = 'var(--background-primary)';
         blockEl.style.padding       = isPrimary ? '15px' : '8px';
@@ -528,18 +528,10 @@ export class BlockManager {
         const blocks = this.context.blocksContainer.querySelectorAll<HTMLElement>('.ink-block');
         blocks.forEach((block, index) => {
             const isSelected = index === this.context.currentBlockIndex;
-            const marginTop = isSelected ?
-                Math.max(this.blockMargins.top, 12) :
-                this.blockMargins.top;
-            const marginBottom = isSelected ?
-                Math.max(this.blockMargins.bottom, 12) :
-                this.blockMargins.bottom;
+            const marginTop = 12;
+            const marginBottom = 12;
             block.style.marginTop = `${marginTop}px`;
             block.style.marginBottom = `${marginBottom}px`;
         });
-    }
-
-    public get blockMargins() {
-        return this.context.toolbarManager.blockMargins;
     }
 }

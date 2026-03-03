@@ -9,7 +9,6 @@ export class ToolbarManager {
     public epsilonInput: HTMLInputElement | null = null;
     public marginTopInput: HTMLInputElement | null = null;
     public marginBottomInput: HTMLInputElement | null = null;
-    public blockMargins: { top: number; bottom: number } = { top: 8, bottom: 8 };
     public useColorForStyling = true;
 
     // Grid controls
@@ -338,53 +337,6 @@ export class ToolbarManager {
         };
         this.toolbar.appendChild(this.epsilonInput);
 
-        // Margin settings
-        this.toolbar.appendChild(this.createSeparator());
-        const marginLabel = document.createElement('span');
-        marginLabel.textContent = 'Margins:';
-        marginLabel.style.fontSize = '12px';
-        this.toolbar.appendChild(marginLabel);
-
-        const marginContainer = document.createElement('div');
-        marginContainer.style.display = 'flex';
-        marginContainer.style.gap = '5px';
-
-        const topLabel = document.createElement('span');
-        topLabel.textContent = 'T:';
-        marginContainer.appendChild(topLabel);
-
-        this.marginTopInput = document.createElement('input');
-        this.marginTopInput.type = 'number';
-        this.marginTopInput.value = '8';
-        this.marginTopInput.min = '0';
-        this.marginTopInput.max = '50';
-        this.marginTopInput.step = '1';
-        this.marginTopInput.style.width = '50px';
-        this.marginTopInput.onchange = (e) => {
-            this.blockMargins.top = parseInt((e.target as HTMLInputElement).value);
-            this.context.blockManager.updateBlockMargins();
-        };
-        marginContainer.appendChild(this.marginTopInput);
-
-        const bottomLabel = document.createElement('span');
-        bottomLabel.textContent = 'B:';
-        marginContainer.appendChild(bottomLabel);
-
-        this.marginBottomInput = document.createElement('input');
-        this.marginBottomInput.type = 'number';
-        this.marginBottomInput.value = '8';
-        this.marginBottomInput.min = '0';
-        this.marginBottomInput.max = '50';
-        this.marginBottomInput.step = '1';
-        this.marginBottomInput.style.width = '50px';
-        this.marginBottomInput.onchange = (e) => {
-            this.blockMargins.bottom = parseInt((e.target as HTMLInputElement).value);
-            this.context.blockManager.updateBlockMargins();
-        };
-        marginContainer.appendChild(this.marginBottomInput);
-
-        this.toolbar.appendChild(marginContainer);
-
         // Add block button
         this.toolbar.appendChild(this.createSeparator());
         const addBlockBtn = this.createToolbarButton('＋', 'Add Block', () => this.context.blockManager.addNewBlock('paragraph', this.context.blocks.length));
@@ -442,24 +394,6 @@ export class ToolbarManager {
         separator.style.background = 'var(--background-modifier-border)';
         separator.style.margin = '0 5px';
         return separator;
-    }
-
-    public updateBlockMargins(): void {
-        if (!this.context.blocksContainer) return;
-
-        const blocks = this.context.blocksContainer.querySelectorAll<HTMLElement>('.ink-block');
-        blocks.forEach((block: HTMLElement, index) => {
-            const isSelected = index === this.context.currentBlockIndex;
-            const marginTop = isSelected ?
-                Math.max(this.blockMargins.top, 12) :
-                this.blockMargins.top;
-            const marginBottom = isSelected ?
-                Math.max(this.blockMargins.bottom, 12) :
-                this.blockMargins.bottom;
-
-            block.style.marginTop = `${marginTop}px`;
-            block.style.marginBottom = `${marginBottom}px`;
-        });
     }
 
     private createGridControls(): void {
