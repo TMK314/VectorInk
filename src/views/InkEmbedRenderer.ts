@@ -155,7 +155,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const widthMultiplier = isDrawing ? 1.0 : (block.displaySettings?.widthMultiplier ?? 1.0) * typeMultiplier;
 
         for (const stroke of strokes) {
-            this.appendSVGStroke(svg, stroke, ns, widthMultiplier, useColor);
+            this.appendSVGStroke(svg, stroke, ns, widthMultiplier, useColor, isDrawing);
         }
         return svg;
     }
@@ -220,7 +220,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
     private appendSVGStroke(
         svg: SVGSVGElement, stroke: Stroke, ns: string,
-        widthMultiplier = 1.0, useColor = true
+        widthMultiplier = 1.0, useColor = true, isDrawing = false
     ): void {
         if (stroke.points.length < 2) return;
         const path = document.createElementNS(ns, 'path') as SVGPathElement;
@@ -238,11 +238,15 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             path.setAttribute('d', d);
         }
 
-        const baseWidth = stroke.style.width ?? 2;
+        const baseWidth = isDrawing ? stroke.style.width ?? 2 : 2;
         const isHighlight = stroke.style.semantic === 'highlight';
         const isBold = stroke.style.semantic === 'bold';
+        const isItalic = stroke.style.semantic === 'italic';
+
         // bold: 1.5× zusätzlich zum block-spezifischen Multiplikator
-        const semanticMul = isBold ? 1.5 : 1.0;
+        let semanticMul = isBold ? 1.5 : 1.0;
+        semanticMul = isItalic ? 0.75 : semanticMul;
+
         const effectiveWidth = isHighlight
             ? baseWidth * 3
             : baseWidth * widthMultiplier * semanticMul;

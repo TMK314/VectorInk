@@ -295,7 +295,7 @@ export class ToolbarManager {
         this.widthMultiplierInput.min = '0.5';
         this.widthMultiplierInput.max = '4.0';
         this.widthMultiplierInput.step = '0.1';
-        this.widthMultiplierInput.value = '1';
+        this.widthMultiplierInput.value = this.getCurrentBlock()?.displaySettings?.widthMultiplier?.toString() ?? '1.0';
         this.widthMultiplierInput.style.width = '60px';
         this.widthMultiplierInput.style.verticalAlign = 'middle';
 
