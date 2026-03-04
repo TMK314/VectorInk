@@ -38,10 +38,6 @@ export class DrawingManager {
     private readonly _CELL = 80; // logische Pixel pro Zelle
     private _currentDrawStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle> | null = null;
 
-    // Block height expansion
-    private readonly BLOCK_EXPANSION_THRESHOLD = 50;
-    private readonly BLOCK_EXPANSION_AMOUNT = 100;
-
     constructor(context: InkView) {
         this.context = context;
     }
@@ -527,10 +523,12 @@ export class DrawingManager {
         const handlePointerDown = (e: PointerEvent) => {
             if (e.button !== 0) return;
             e.preventDefault();
-            canvas.setPointerCapture(e.pointerId); // wichtig für reibungslosen Drag
+            canvas.setPointerCapture(e.pointerId);
             const point = getPoint(e);
             isMouseDown = true;
-            updateCursor(point);
+            // updateCursor absichtlich NICHT hier — getStrokeAtPoint ist O(n·m)
+            // und würde den Start jedes Strokes um 20–50ms verzögern.
+            // Cursor-Updates laufen bereits in handlePointerMove (nur im Ruhezustand).
             const block = this.context.blocks[blockIndex];
             if (!block) return;
             if (this.currentTool === 'selection') {
@@ -805,8 +803,8 @@ export class DrawingManager {
     }
 
     private expandBlockIfNeeded(canvas: HTMLCanvasElement, block: Block, point: Point): void {
-        const padding = 30; // Weniger Padding für präzisere Kontrolle
-        const threshold = 20; // Niedrigerer Schwellenwert
+        const padding = 60; // Weniger Padding für präzisere Kontrolle
+        const threshold = 30; // Niedrigerer Schwellenwert
 
         // Prüfe nach unten
         if (point.y > block.bbox.height - threshold) {
@@ -847,8 +845,8 @@ export class DrawingManager {
             const ds = this.getBlockDisplaySettings(block);
             const isDark = this.context.styleManager.isDarkTheme();
             const bgColor = ds.useColor
-                ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
-                : (ds.backgroundColor ?? '#ffffff');
+                ? (ds.backgroundColor ?? '#ffffff')
+                : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'));
             cCtx.fillStyle = bgColor;
             cCtx.fillRect(0, 0, newCache.width, newCache.height);
             if (oldCache) cCtx.drawImage(oldCache, 0, 0); // logisch → logisch, 1:1 ✓
