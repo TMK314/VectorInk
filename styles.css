@@ -372,3 +372,26 @@
     padding: 6px 10px;
     font-size: 0.85em;
 }
+
+/* =========================
+   Center Layout + Limit Width
+   ========================= */
+
+/* Container für Blöcke wird begrenzt und zentriert */
+.ink-blocks-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Einzelne Blöcke: zentriert + max. Breite */
+.ink-block {
+    width: 100%;
+    max-width: 900px; /* <-- gewünschte Maximalbreite */
+}
+
+/* Canvas ebenfalls begrenzen */
+.ink-block canvas {
+    max-width: 900px;
+    margin: 0 auto;
+}
