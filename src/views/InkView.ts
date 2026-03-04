@@ -251,11 +251,16 @@ export class InkView extends FileView {
 
         try {
             const raw = await this.app.vault.read(this.file);
-            this.document = raw ? new InkDocument(JSON.parse(raw)) : new InkDocument();
+
+            this.document = raw
+                ? InkDocument.fromJSON(raw)
+                : new InkDocument();
 
             if (this.document) {
-                this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);
+                this.blocks = [...this.document.blocks]
+                    .sort((a, b) => a.order - b.order);
             }
+
         } catch (error) {
             console.error('Error loading document:', error);
             this.document = new InkDocument();
@@ -273,11 +278,14 @@ export class InkView extends FileView {
             console.log('💾 Saving document...');
 
             const docData = this.document.getData();
+
+            // Blocks synchronisieren
             docData.blocks = this.blocks.map(block => ({
                 ...block,
                 strokeIds: [...block.strokeIds]
             })).sort((a, b) => a.order - b.order);
 
+            // Unbenutzte Strokes entfernen
             const usedStrokeIds = new Set<string>();
             docData.blocks.forEach(block => {
                 block.strokeIds.forEach(id => usedStrokeIds.add(id));
@@ -287,8 +295,13 @@ export class InkView extends FileView {
                 usedStrokeIds.has(stroke.id)
             );
 
+            // Dokument neu instanziieren (sauberer Zustand)
             this.document = new InkDocument(docData);
-            await this.app.vault.modify(this.file, JSON.stringify(docData, null, 2));
+
+            // 🔥 WICHTIG: jetzt V2 Serialisierung nutzen
+            const serialized = this.document.toJSON();
+
+            await this.app.vault.modify(this.file, serialized);
 
             console.log('✅ Document saved successfully');
             new Notice('Document saved');
