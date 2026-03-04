@@ -29,34 +29,34 @@ export class BlockManager {
     }
 
     private createBlockElement(block: Block, index: number): HTMLElement {
-        const isPrimary     = index === this.context.currentBlockIndex;
+        const isPrimary = index === this.context.currentBlockIndex;
         const isInSelection = this.selectedBlockIndices.has(index);
-        const isSelected    = isPrimary || isInSelection;
+        const isSelected = isPrimary || isInSelection;
 
         const blockEl = document.createElement('div');
         blockEl.className = 'ink-block';
-        blockEl.dataset.blockId   = block.id;
+        blockEl.dataset.blockId = block.id;
         blockEl.dataset.blockType = block.type;
-        blockEl.style.position      = 'relative';
-        blockEl.style.marginTop     = `12px`;
-        blockEl.style.marginBottom  = `12px`;
-        blockEl.style.borderRadius  = '6px';
-        blockEl.style.background    = 'var(--background-primary)';
-        blockEl.style.padding       = isPrimary ? '15px' : '8px';
-        blockEl.style.minHeight     = isPrimary ? '150px' : '100px';
-        blockEl.style.transition    = 'all 0.2s ease';
-        blockEl.style.userSelect    = 'none';
-        blockEl.style.cursor        = 'default';
+        blockEl.style.position = 'relative';
+        blockEl.style.marginTop = `12px`;
+        blockEl.style.marginBottom = `12px`;
+        blockEl.style.borderRadius = '6px';
+        blockEl.style.background = 'var(--background-primary)';
+        blockEl.style.padding = isPrimary ? '15px' : '8px';
+        blockEl.style.minHeight = isPrimary ? '150px' : '100px';
+        blockEl.style.transition = 'all 0.2s ease';
+        blockEl.style.userSelect = 'none';
+        blockEl.style.cursor = 'default';
 
         // Rahmen: primaer = durchgezogen, Mehrfachauswahl = gestrichelt, Rest = dezent
         if (isPrimary) {
-            blockEl.style.border    = '2px solid var(--interactive-accent)';
+            blockEl.style.border = '2px solid var(--interactive-accent)';
             blockEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
         } else if (isInSelection) {
-            blockEl.style.border    = '1.5px dashed var(--interactive-accent)';
+            blockEl.style.border = '1.5px dashed var(--interactive-accent)';
             blockEl.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
         } else {
-            blockEl.style.border    = '1px solid var(--background-modifier-border)';
+            blockEl.style.border = '1px solid var(--background-modifier-border)';
             blockEl.style.boxShadow = 'none';
         }
 
@@ -186,56 +186,48 @@ export class BlockManager {
 
         blockEl.onclick = (e) => {
             const target = e.target as HTMLElement;
-            // Nur auswählen, wenn nicht auf interaktive Elemente geklickt wird
             if (!target.closest('select, button, input, .grid-line, .table-cell-overlay')) {
                 const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
                 const isMultiSelectKey = isMac ? e.metaKey : e.ctrlKey;
                 const isRangeSelectKey = e.shiftKey;
 
                 if (isMultiSelectKey) {
-                    // Ctrl/Cmd+Klick: Toggle dieser Block in der Auswahl
                     if (this.selectedBlockIndices.has(index)) {
                         this.selectedBlockIndices.delete(index);
-                        // Wenn keine Auswahl mehr, dann diesen Block auswählen
                         if (this.selectedBlockIndices.size === 0) {
                             this.selectedBlockIndices.add(index);
                             this.context.currentBlockIndex = index;
                         } else {
-                            // Das erste Element in der Auswahl wird das Primär-Element
-                            const firstSelected = Math.min(...Array.from(this.selectedBlockIndices));
-                            this.context.currentBlockIndex = firstSelected;
+                            this.context.currentBlockIndex = Math.min(...Array.from(this.selectedBlockIndices));
                         }
                     } else {
                         this.selectedBlockIndices.add(index);
-                        // Das erste Element in der Auswahl wird das Primär-Element
-                        const firstSelected = Math.min(...Array.from(this.selectedBlockIndices));
-                        this.context.currentBlockIndex = firstSelected;
+                        this.context.currentBlockIndex = Math.min(...Array.from(this.selectedBlockIndices));
                     }
                 } else if (isRangeSelectKey) {
-                    // Shift+Klick: Bereich von currentBlockIndex zu diesem Block auswählen
                     const start = Math.min(this.context.currentBlockIndex, index);
                     const end = Math.max(this.context.currentBlockIndex, index);
                     this.selectedBlockIndices.clear();
-                    for (let i = start; i <= end; i++) {
-                        this.selectedBlockIndices.add(i);
-                    }
-                    // Das erste Element wird das Primär-Element
+                    for (let i = start; i <= end; i++) this.selectedBlockIndices.add(i);
                     this.context.currentBlockIndex = start;
                 } else {
-                    // Normaler Klick: neue Auswahl mit nur diesem Block
                     this.selectedBlockIndices.clear();
                     this.selectedBlockIndices.add(index);
                     this.context.currentBlockIndex = index;
                 }
 
-                this.renderBlocks(); // Neu rendern aktualisiert die UI komplett
+                // Nur Stile aktualisieren — KEIN renderBlocks()
+                this._updateBlockSelectionStyles();
                 this.context.toolbarManager?.syncToolbarToCurrentBlock();
             }
         };
 
         blockEl.ondblclick = (e) => {
+            this.selectedBlockIndices.clear();
+            this.selectedBlockIndices.add(index);
             this.context.currentBlockIndex = index;
-            this.renderBlocks();
+            // Nur Stile aktualisieren — KEIN renderBlocks()
+            this._updateBlockSelectionStyles();
             this.context.toolbarManager?.syncToolbarToCurrentBlock();
         };
 
@@ -532,6 +524,34 @@ export class BlockManager {
             const marginBottom = 12;
             block.style.marginTop = `${marginTop}px`;
             block.style.marginBottom = `${marginBottom}px`;
+        });
+    }
+
+    /**
+ * Aktualisiert nur die visuellen Selektions-Stile der bestehenden Block-Elemente,
+ * ohne den DOM neu aufzubauen oder Canvases neu zu rendern.
+ */
+    private _updateBlockSelectionStyles(): void {
+        if (!this.context.blocksContainer) return;
+
+        this.context.blocks.forEach((block, index) => {
+            const blockEl = this.context.blocksContainer!
+                .querySelector<HTMLElement>(`.ink-block[data-block-id="${block.id}"]`);
+            if (!blockEl) return;
+
+            const isPrimary = index === this.context.currentBlockIndex;
+            const isInSelection = this.selectedBlockIndices.has(index);
+
+            if (isPrimary) {
+                blockEl.style.border = '2px solid var(--interactive-accent)';
+                blockEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+            } else if (isInSelection) {
+                blockEl.style.border = '1.5px dashed var(--interactive-accent)';
+                blockEl.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+            } else {
+                blockEl.style.border = '1px solid var(--background-modifier-border)';
+                blockEl.style.boxShadow = 'none';
+            }
         });
     }
 }

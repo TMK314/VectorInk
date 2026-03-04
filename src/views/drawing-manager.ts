@@ -256,7 +256,7 @@ export class DrawingManager {
                 this.currentStroke = [];
                 lastPoint = null;
                 console.log(`Stroke: ${originalCount} → 2 points (dot)`);
-                this.invalidateBlockCache(block.id); // <-- NEU
+                this._appendStrokeToCache(block, added);
                 return;
             }
 
@@ -280,7 +280,8 @@ export class DrawingManager {
             this.syncBlockStrokes(block);
             this.currentStroke = [];
             lastPoint = null;
-            this.invalidateBlockCache(block.id); // <-- NEU
+            // Cache NICHT invalidieren — neuen Stroke inkrementell draufzeichnen
+            this._appendStrokeToCache(block, addedStroke);
         };
 
         const startErasing = (point: Point) => {
@@ -327,6 +328,11 @@ export class DrawingManager {
 
             const block = this.context.blocks[blockIndex];
             if (block) {
+                // Jetzt einmalig Cache invalidieren und neu aufbauen
+                this.invalidateBlockCache(block.id);
+                const canvas = this.context.blockManager.getCanvasForBlock(block.id);
+                if (canvas) this.drawBlockStrokes(canvas, block);
+
                 setTimeout(() => {
                     this.adjustBlockSize(block.id);
                 }, 50);
@@ -567,6 +573,7 @@ export class DrawingManager {
                 draw(point);
                 lastPoint = point;
                 this.checkAutoExpand(canvas, point);
+                // KEIN redrawCanvasWithSelection hier — draw() zeichnet direkt auf Canvas
             }
         };
 
@@ -574,16 +581,20 @@ export class DrawingManager {
             const point = getPoint(e);
             canvas.releasePointerCapture(e.pointerId);
             isMouseDown = false;
+
             if (this.currentTool === 'selection') {
                 if (isSelectingRect) endSelectionRect(point, e.shiftKey || e.ctrlKey || e.metaKey);
                 else if (isDraggingSelection) endDraggingSelection();
+                redrawCanvasWithSelection(); // nur bei Selection nötig
             } else if (this.currentTool === 'pen') {
                 stopDrawing();
+                // KEIN redrawCanvasWithSelection — _appendStrokeToCache hat den Stroke bereits hinzugefügt
             } else if (this.currentTool === 'eraser') {
                 stopErasing();
+                redrawCanvasWithSelection();
             }
+
             lastPoint = null;
-            redrawCanvasWithSelection();
         };
 
         const handlePointerLeave = () => {
@@ -621,7 +632,8 @@ export class DrawingManager {
     }
 
     public drawBlockStrokes(canvas: HTMLCanvasElement, block: Block): void {
-        if (this.isDrawing) {
+        // RAF auch bei laufendem Stroke-Input (nicht nur isDrawing)
+        if (this.isDrawing || this._rafPending) {
             this._rafCanvas = canvas;
             this._rafBlock = block;
             if (!this._rafPending) {
@@ -654,7 +666,6 @@ export class DrawingManager {
             ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
             : (ds.backgroundColor ?? '#ffffff');
 
-        // Cache holen oder neu erstellen
         let cache = this._strokeCache.get(block.id);
         const needsRebuild = !cache
             || cache.width !== canvas.width
@@ -664,16 +675,40 @@ export class DrawingManager {
             cache = document.createElement('canvas');
             cache.width = canvas.width;
             cache.height = canvas.height;
+            const cCtx = cache.getContext('2d');
+            if (cCtx) {
+                cCtx.fillStyle = bgColor;
+                cCtx.fillRect(0, 0, cache.width, cache.height);
+            }
             this._strokeCache.set(block.id, cache);
-            this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
+
+            // Während Radieren: sofort mit allen Strokes rendern (kein defer —
+            // wir sind bereits nach dem Entfernen, Stroke-Zahl ist stabil)
+            if (this.isErasing) {
+                this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
+            } else {
+                const capturedCache = cache;
+                const capturedCanvas = canvas;
+                const idle = (window as any).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 0));
+                idle(() => {
+                    this._renderStrokesToCache(capturedCache, block, ds, bgColor, isDark);
+                    const currentCache = this._strokeCache.get(block.id);
+                    if (currentCache === capturedCache) {
+                        const liveCtx = capturedCanvas.getContext('2d');
+                        if (liveCtx) {
+                            liveCtx.clearRect(0, 0, capturedCanvas.width, capturedCanvas.height);
+                            liveCtx.drawImage(capturedCache, 0, 0);
+                            this.context.strokeSelectionManager.drawSelectionHighlights(capturedCanvas, block);
+                        }
+                    }
+                });
+            }
         }
 
-        // Cache auf sichtbaren Canvas blitten
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (cache)
             ctx.drawImage(cache, 0, 0);
 
-        // Aktuellen (noch nicht gespeicherten) Strich live zeichnen
         if (this.isDrawing && this.currentStroke.length >= 2) {
             const currentBlock = this.context.blocks[this.context.currentBlockIndex];
             if (currentBlock?.id === block.id) {
@@ -723,6 +758,9 @@ export class DrawingManager {
         bgColor: string,
         isDark: boolean
     ): void {
+        // TEMP DEBUG — zeigt wer den Rebuild auslöst
+        console.trace(`[InkPerf] Cache REBUILD — ${block.strokeIds.length} strokes`);
+
         if (!this.context.document) return;
         const ctx = cache.getContext('2d');
         if (!ctx) return;
@@ -749,6 +787,25 @@ export class DrawingManager {
 
     public invalidateBlockCache(blockId: string): void {
         this._strokeCache.delete(blockId);
+    }
+
+    private _appendStrokeToCache(block: Block, stroke: Stroke): void {
+        const cache = this._strokeCache.get(block.id);
+        if (!cache) return; // kein Cache vorhanden → wird beim nächsten Draw neu gebaut
+
+        const ctx = cache.getContext('2d');
+        if (!ctx) return;
+
+        const ds = this.getBlockDisplaySettings(block);
+        const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
+            block.type, stroke.style, ds.useColor, ds.widthMultiplier
+        );
+
+        if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
+            this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
+        } else if (stroke.points.length >= 2) {
+            this.drawLinearStroke(ctx, stroke.points, displayStyle);
+        }
     }
 
     private updateBlockBoundingBox(block: Block, points: Point[]): void {
@@ -811,22 +868,57 @@ export class DrawingManager {
     }
 
     private expandBlock(canvas: HTMLCanvasElement, block: Block, dimension: 'width' | 'height', amount: number): void {
-        const oldWidth = block.bbox.width;
-        const oldHeight = block.bbox.height;
-
         if (dimension === 'width') {
             block.bbox.width += amount;
         } else {
             block.bbox.height += amount;
         }
 
-        // Canvas aktualisieren
-        this.resizeCanvas(canvas, block);
+        const dpr = window.devicePixelRatio || 1;
+        const newW = block.bbox.width * dpr;
+        const newH = block.bbox.height * dpr;
 
-        // Strokes neu zeichnen
-        this.drawBlockStrokes(canvas, block);
+        // Cache mitvergrößern ohne Inhalt zu verlieren
+        const oldCache = this._strokeCache.get(block.id);
+        if (oldCache) {
+            const newCache = document.createElement('canvas');
+            newCache.width = newW;
+            newCache.height = newH;
+            const cCtx = newCache.getContext('2d');
+            if (cCtx) {
+                // Hintergrund für gesamten neuen Bereich
+                const ds = this.getBlockDisplaySettings(block);
+                const isDark = this.context.styleManager.isDarkTheme();
+                const bgColor = !ds.useColor
+                    ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
+                    : (ds.backgroundColor ?? '#ffffff');
+                cCtx.fillStyle = bgColor;
+                cCtx.fillRect(0, 0, newW, newH);
+                // Alten Cache-Inhalt kopieren (kein Neuzeichnen aller Strokes)
+                cCtx.drawImage(oldCache, 0, 0);
+            }
+            this._strokeCache.set(block.id, newCache);
+        }
 
-        console.log(`Block expanded ${dimension}: ${dimension === 'width' ? `${oldWidth}->${block.bbox.width}` : `${oldHeight}->${block.bbox.height}`}`);
+        // Canvas vergrößern (ohne invalidateBlockCache)
+        canvas.width = newW;
+        canvas.height = newH;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.scale(dpr, dpr);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+        }
+        canvas.style.width = `${block.bbox.width}px`;
+        canvas.style.height = `${block.bbox.height}px`;
+
+        const blockEl = canvas.closest('.ink-block') as HTMLElement;
+        if (blockEl) {
+            const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
+            blockEl.style.minHeight = `${block.bbox.height + (isSelected ? 120 : 80)}px`;
+        }
+
+        // Kein drawBlockStrokes hier während des Zeichnens — draw() zeichnet direkt
     }
 
     public resizeCanvas(canvas: HTMLCanvasElement, block: Block): void {
@@ -852,7 +944,7 @@ export class DrawingManager {
             blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
         }
 
-        this.invalidateBlockCache(block.id); // <-- NEU
+        this.invalidateBlockCache(block.id);
     }
 
     public adjustBlockSizeAfterErasing(blockId: string): void {
@@ -954,79 +1046,52 @@ export class DrawingManager {
 
         const eraserRadius = this.currentPenStyle.width * 5;
         const strokeIdsToRemove: string[] = [];
-        let strokesRemoved = false;
 
         if (this.eraserMode === 'stroke') {
             for (const strokeId of block.strokeIds) {
                 const stroke = this.context.document.strokes.find(s => s.id === strokeId);
                 if (!stroke) continue;
 
-                let strokeRemoved = false;
-
+                let hit = false;
                 for (const p of stroke.points) {
-                    const distance = Math.sqrt(
-                        Math.pow(p.x - point.x, 2) + Math.pow(p.y - point.y, 2)
-                    );
-
-                    if (distance <= eraserRadius) {
-                        strokeIdsToRemove.push(strokeId);
-                        strokeRemoved = true;
-                        strokesRemoved = true;
-                        break;
+                    if (Math.hypot(p.x - point.x, p.y - point.y) <= eraserRadius) {
+                        hit = true; break;
                     }
                 }
-
-                if (!strokeRemoved && stroke.points.length >= 2) {
+                if (!hit && stroke.points.length >= 2) {
                     for (let i = 0; i < stroke.points.length - 1; i++) {
                         const p1 = stroke.points[i];
                         const p2 = stroke.points[i + 1];
-
-                        if (p1 && p2) {
-                            const distanceToLine = this.distanceToLineSegment(point, p1, p2);
-                            if (distanceToLine <= eraserRadius) {
-                                strokeIdsToRemove.push(strokeId);
-                                strokesRemoved = true;
-                                break;
-                            }
+                        if (p1 && p2 && this.distanceToLineSegment(point, p1, p2) <= eraserRadius) {
+                            hit = true; break;
                         }
                     }
                 }
+                if (hit) strokeIdsToRemove.push(strokeId);
             }
         } else {
             for (const strokeId of block.strokeIds) {
                 const stroke = this.context.document.strokes.find(s => s.id === strokeId);
                 if (!stroke) continue;
-
                 for (const p of stroke.points) {
-                    const distance = Math.sqrt(
-                        Math.pow(p.x - point.x, 2) + Math.pow(p.y - point.y, 2)
-                    );
-
-                    if (distance <= eraserRadius) {
-                        strokeIdsToRemove.push(strokeId);
-                        strokesRemoved = true;
-                        break;
+                    if (Math.hypot(p.x - point.x, p.y - point.y) <= eraserRadius) {
+                        strokeIdsToRemove.push(strokeId); break;
                     }
                 }
             }
         }
 
         if (strokeIdsToRemove.length > 0) {
-            const beforeCount = block.strokeIds.length;
             block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
+            strokeIdsToRemove.forEach(id => this.context.document?.removeStroke(id));
 
-            strokeIdsToRemove.forEach(strokeId => {
-                this.context.document?.removeStroke(strokeId);
-            });
+            // Während Radieren: Cache NICHT invalidieren, direkt auf Canvas zeichnen
+            // (schnell, kein Rebuild — Cache wird in stopErasing einmalig neu gebaut)
+            this._drawBlockStrokesImmediate(canvas, block);
 
-            this.invalidateBlockCache(block.id); // <-- NEU
-            this.drawBlockStrokes(canvas, block);
-
-            if (strokesRemoved) {
-                setTimeout(() => {
-                    this.adjustBlockSizeAfterErasing(block.id);
-                }, 100);
-            }
+            setTimeout(() => {
+                this.adjustBlockSizeAfterErasing(block.id);
+            }, 100);
         }
     }
 
