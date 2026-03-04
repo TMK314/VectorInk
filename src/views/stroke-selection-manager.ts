@@ -217,6 +217,8 @@ export class StrokeSelectionManager {
 
         this.selectedStrokes.clear();
 
+        const pastedStrokes: Stroke[] = [];
+
         this.copiedStrokes.forEach(originalStroke => {
             const newStroke: Stroke = {
                 ...originalStroke,
@@ -239,7 +241,16 @@ export class StrokeSelectionManager {
             const addedStroke = this.context.document.addStroke(newStroke);
             block.strokeIds.push(addedStroke.id);
             this.selectedStrokes.add(addedStroke.id);
+            pastedStrokes.push(addedStroke);
         });
+
+        if (pastedStrokes.length > 0) {
+            this.context.historyManager?.push({
+                type: 'PASTE_STROKES',
+                blockId: block.id,
+                strokes: pastedStrokes
+            });
+        }
 
         new Notice(`Pasted ${this.copiedStrokes.length} stroke(s)`);
         this.context.blockManager.renderBlocks();
@@ -252,12 +263,30 @@ export class StrokeSelectionManager {
         const currentBlock = this.context.blocks[this.context.currentBlockIndex];
 
         if (currentBlock) {
-            currentBlock.strokeIds = currentBlock.strokeIds.filter(id => !this.selectedStrokes.has(id));
-        }
+            // History-Einträge VOR dem Löschen sammeln
+            const entries: Array<{ blockId: string; stroke: Stroke; blockStrokeIdIndex: number }> = [];
+            this.selectedStrokes.forEach(strokeId => {
+                const idx = currentBlock.strokeIds.indexOf(strokeId);
+                const stroke = this.context.document?.getStroke(strokeId);
+                if (stroke && idx >= 0) {
+                    entries.push({
+                        blockId: currentBlock.id,
+                        stroke: { ...stroke, points: stroke.points.map(p => ({ ...p })) },
+                        blockStrokeIdIndex: idx
+                    });
+                }
+            });
 
-        this.selectedStrokes.forEach(strokeId => {
-            this.context.document?.removeStroke(strokeId);
-        });
+            currentBlock.strokeIds = currentBlock.strokeIds.filter(id => !this.selectedStrokes.has(id));
+
+            this.selectedStrokes.forEach(strokeId => {
+                this.context.document?.removeStroke(strokeId);
+            });
+
+            if (entries.length > 0) {
+                this.context.historyManager?.push({ type: 'DELETE_STROKES', entries });
+            }
+        }
 
         this.selectedStrokes.clear();
         this.context.blockManager.renderBlocks();
@@ -265,20 +294,32 @@ export class StrokeSelectionManager {
     }
 
     public applyStyleToSelectedStrokes(style: Partial<StrokeStyle>): void {
-        if (!this.context.document || this.selectedStrokes.size === 0) return;
+    if (!this.context.document || this.selectedStrokes.size === 0) return;
 
-        this.selectedStrokes.forEach(strokeId => {
-            const stroke = this.context.document?.getStroke(strokeId);
-            if (stroke) {
-                const newStyle = { ...stroke.style, ...style };
-                if (this.context.document)
-                    this.context.document.updateStroke(strokeId, { style: newStyle });
-            }
+    const currentBlock = this.context.blocks[this.context.currentBlockIndex];
+    const historyEntries: Array<{ strokeId: string; oldStyle: StrokeStyle; newStyle: StrokeStyle }> = [];
+
+    this.selectedStrokes.forEach(strokeId => {
+        const stroke = this.context.document?.getStroke(strokeId);
+        if (stroke) {
+            const oldStyle: StrokeStyle = { ...stroke.style };
+            const newStyle: StrokeStyle = { ...stroke.style, ...style };
+            historyEntries.push({ strokeId, oldStyle, newStyle });
+            this.context.document?.updateStroke(strokeId, { style: newStyle });
+        }
+    });
+
+    if (historyEntries.length > 0 && currentBlock) {
+        this.context.historyManager?.push({
+            type: 'RESTYLE_STROKES',
+            blockId: currentBlock.id,
+            entries: historyEntries
         });
-
-        this.context.blockManager.renderBlocks();
-        new Notice(`Updated style for ${this.selectedStrokes.size} stroke(s)`);
     }
+
+    this.context.blockManager.renderBlocks();
+    new Notice(`Updated style for ${this.selectedStrokes.size} stroke(s)`);
+}
 
     public clearSelection(): void {
         this.selectedStrokes.clear();

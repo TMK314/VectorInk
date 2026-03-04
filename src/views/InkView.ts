@@ -9,6 +9,7 @@ import { DrawingManager } from './drawing-manager';
 import { ToolbarManager } from './toolbar-manager';
 import { StyleManager } from './style-manager';
 import { StrokeSelectionManager } from './stroke-selection-manager';
+import { HistoryManager } from './history-manager';
 
 export const INK_VIEW_TYPE = 'ink-view';
 
@@ -28,6 +29,7 @@ export class InkView extends FileView {
     public blocksContainer: HTMLElement | null = null;
 
     public strokeSelectionManager: StrokeSelectionManager;
+    public historyManager: HistoryManager;
 
     constructor(leaf: WorkspaceLeaf, plugin: VectorInkPlugin) {
         super(leaf);
@@ -39,6 +41,7 @@ export class InkView extends FileView {
         this.drawingManager = new DrawingManager(this);
         this.blockManager = new BlockManager(this);
         this.toolbarManager = new ToolbarManager(this);
+        this.historyManager = new HistoryManager(this);
     }
 
     getViewType(): string {
@@ -120,6 +123,19 @@ export class InkView extends FileView {
             if (!this.contentEl.contains(document.activeElement)) return;
 
             const currentBlock = this.blocks[this.currentBlockIndex];
+
+            // Undo / Redo
+            if (e.ctrlKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+                this.historyManager.undo();
+                e.preventDefault();
+                return;
+            }
+            if ((e.ctrlKey && e.shiftKey && (e.key === 'z' || e.key === 'Z')) ||
+                (e.ctrlKey && (e.key === 'y' || e.key === 'Y'))) {
+                this.historyManager.redo();
+                e.preventDefault();
+                return;
+            }
 
             // Handle stroke manipulation shortcuts
             if (this.drawingManager.currentTool === 'selection') {
@@ -229,6 +245,7 @@ export class InkView extends FileView {
         this.document = null;
         this.blocks = [];
         this.currentBlockIndex = 0;
+        this.historyManager.clear();
         this.blocksContainer = null;
 
         // Neues Dokument laden

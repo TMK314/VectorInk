@@ -61,7 +61,7 @@ interface SerializedDocumentData {
 function encodePoints(points: Point[]): string {
     const buf = new Float32Array(points.length * 2);
     for (let i = 0; i < points.length; i++) {
-        buf[i * 2]     = points[i]!.x;
+        buf[i * 2] = points[i]!.x;
         buf[i * 2 + 1] = points[i]!.y;
     }
     return float32ToBase64(buf);
@@ -82,10 +82,10 @@ function encodeBeziers(curves: CubicBezier[]): string {
     for (let i = 0; i < curves.length; i++) {
         const b = curves[i]!;
         const o = i * 8;
-        buf[o]   = b.p0.x; buf[o+1] = b.p0.y;
-        buf[o+2] = b.p1.x; buf[o+3] = b.p1.y;
-        buf[o+4] = b.p2.x; buf[o+5] = b.p2.y;
-        buf[o+6] = b.p3.x; buf[o+7] = b.p3.y;
+        buf[o] = b.p0.x; buf[o + 1] = b.p0.y;
+        buf[o + 2] = b.p1.x; buf[o + 3] = b.p1.y;
+        buf[o + 4] = b.p2.x; buf[o + 5] = b.p2.y;
+        buf[o + 6] = b.p3.x; buf[o + 7] = b.p3.y;
     }
     return float32ToBase64(buf);
 }
@@ -97,10 +97,10 @@ function decodeBeziers(encoded: string): CubicBezier[] {
     for (let i = 0; i < count; i++) {
         const o = i * 8;
         curves.push({
-            p0: { x: buf[o]!,   y: buf[o+1]! },
-            p1: { x: buf[o+2]!, y: buf[o+3]! },
-            p2: { x: buf[o+4]!, y: buf[o+5]! },
-            p3: { x: buf[o+6]!, y: buf[o+7]! },
+            p0: { x: buf[o]!, y: buf[o + 1]! },
+            p1: { x: buf[o + 2]!, y: buf[o + 3]! },
+            p2: { x: buf[o + 4]!, y: buf[o + 5]! },
+            p3: { x: buf[o + 6]!, y: buf[o + 7]! },
         });
     }
     return curves;
@@ -165,7 +165,7 @@ export class InkDocument {
     }
 
     get strokes(): Stroke[] { return [...this.data.strokes]; }
-    get blocks(): Block[]   { return [...this.data.blocks]; }
+    get blocks(): Block[] { return [...this.data.blocks]; }
     get gridSettings(): GridSettings { return this.data.document.grid; }
 
     setGridSettings(settings: Partial<GridSettings>): void {
@@ -223,7 +223,7 @@ export class InkDocument {
     }
 
     getStroke(strokeId: string): Stroke | undefined { return this._strokeMap.get(strokeId); }
-    getBlock(blockId: string): Block | undefined    { return this.data.blocks.find(b => b.id === blockId); }
+    getBlock(blockId: string): Block | undefined { return this.data.blocks.find(b => b.id === blockId); }
 
     updateStroke(strokeId: string, updates: Partial<Stroke>): boolean {
         const stroke = this._strokeMap.get(strokeId);
@@ -258,7 +258,7 @@ export class InkDocument {
     }
 
     get pageSettings() { return this.data.document.page; }
-    get settings()     { return this.data.settings; }
+    get settings() { return this.data.settings; }
 
     // ─── Serialisierung ───────────────────────────────────────────────────────
 
@@ -324,5 +324,13 @@ export class InkDocument {
         // Zähler so setzen, dass keine Kollision mit bestehenden UUIDs entsteht
         // (UUIDs sind keine gültigen Kurz-IDs → _idCounter = 0 ist sicher)
         return new InkDocument({ ...raw, strokes }, 0);
+    }
+
+    /** Fügt einen Stroke mit seiner originalen ID zurück ein (für Undo/Redo). */
+    restoreStroke(stroke: Stroke): void {
+        if (!this.data.strokes.some(s => s.id === stroke.id)) {
+            this.data.strokes.push({ ...stroke, points: stroke.points.map(p => ({ ...p })) });
+            this.updateTimestamp();
+        }
     }
 }

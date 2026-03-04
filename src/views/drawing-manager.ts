@@ -38,6 +38,8 @@ export class DrawingManager {
     private readonly _CELL = 80; // logische Pixel pro Zelle
     private _currentDrawStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle> | null = null;
 
+    public _currentErasedStrokes: Array<{ stroke: Stroke; blockStrokeIdIndex: number }> = [];
+
     constructor(context: InkView) {
         this.context = context;
     }
@@ -264,10 +266,26 @@ export class DrawingManager {
             lastPoint = null;
             // Cache NICHT invalidieren — neuen Stroke inkrementell draufzeichnen
             this._appendStrokeToCache(block, addedStroke);
+
+            // History
+            const histBlock = this.context.blocks[blockIndex];
+            if (histBlock) {
+                this.context.historyManager?.push({
+                    type: 'ADD_STROKE',
+                    blockId: histBlock.id,
+                    stroke: {
+                        ...addedStroke,
+                        points: addedStroke.points.map(p => ({ ...p })),
+                        bezierCurves: addedStroke.bezierCurves?.map(c => ({ ...c, p0: { ...c.p0 }, p1: { ...c.p1 }, p2: { ...c.p2 }, p3: { ...c.p3 } }))
+                    }
+                });
+            }
         };
 
         const startErasing = (point: Point) => {
             if (blockIndex !== this.context.currentBlockIndex) return;
+
+            this._currentErasedStrokes = [];
 
             this.isErasing = true;
             lastErasePoint = point;
@@ -305,6 +323,20 @@ export class DrawingManager {
         };
 
         const stopErasing = () => {
+            // History für diese Radier-Session
+            if (this._currentErasedStrokes.length > 0) {
+                const block = this.context.blocks[blockIndex];
+                if (block) {
+                    this.context.historyManager?.push({
+                        type: 'ERASE_STROKES',
+                        blockId: block.id,
+                        strokes: this._currentErasedStrokes.map(e => e.stroke),
+                        blockStrokeIdIndices: this._currentErasedStrokes.map(e => e.blockStrokeIdIndex)
+                    });
+                }
+                this._currentErasedStrokes = [];
+            }
+
             this.isErasing = false;
             lastErasePoint = null;
             this._spatialIndex = null;
@@ -498,6 +530,30 @@ export class DrawingManager {
                     });
                 }
             });
+
+            // History für Move
+            const movedIds = [...this.context.strokeSelectionManager.selectedStrokes];
+            if (movedIds.length > 0 && originalStrokeData.size > 0) {
+                const firstId = movedIds[0];
+                const origData = firstId ? originalStrokeData.get(firstId) : undefined;
+                const currentStroke = firstId ? this.context.document?.getStroke(firstId) : undefined;
+                if (origData && currentStroke && origData.points[0] && currentStroke.points[0]) {
+                    const dx = currentStroke.points[0].x - origData.points[0].x;
+                    const dy = currentStroke.points[0].y - origData.points[0].y;
+                    if (dx !== 0 || dy !== 0) {
+                        const block = this.context.blocks[blockIndex];
+                        if (block) {
+                            this.context.historyManager?.push({
+                                type: 'MOVE_STROKES',
+                                blockId: block.id,
+                                strokeIds: movedIds,
+                                dx,
+                                dy
+                            });
+                        }
+                    }
+                }
+            }
 
             isDraggingSelection = false;
             dragStartPoint = null;
@@ -1152,6 +1208,18 @@ export class DrawingManager {
             const stroke = this.context.document.getStroke(strokeId);
             if (stroke) this._unindexStroke(strokeId, stroke.points);
         }
+
+        // Für History: Strokes mit Originalindex sichern
+        strokeIdsToRemove.forEach(id => {
+            const idx = block.strokeIds.indexOf(id);
+            const stroke = this.context.document?.getStroke(id);
+            if (stroke && idx >= 0) {
+                this._currentErasedStrokes.push({
+                    stroke: { ...stroke, points: stroke.points.map(p => ({ ...p })), bezierCurves: stroke.bezierCurves?.map(c => ({ ...c })) },
+                    blockStrokeIdIndex: idx
+                });
+            }
+        });
 
         block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
         strokeIdsToRemove.forEach(id => this.context.document!.removeStroke(id));

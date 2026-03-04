@@ -26,6 +26,9 @@ export class ToolbarManager {
     private widthMultiplierInput: HTMLInputElement | null = null;
     private multiplierValue: HTMLSpanElement | null = null;
 
+    private undoBtn: HTMLButtonElement | null = null;
+    private redoBtn: HTMLButtonElement | null = null;
+
     constructor(context: InkView) {
         this.context = context;
     }
@@ -44,6 +47,19 @@ export class ToolbarManager {
         // Save button
         const saveBtn = this.createToolbarButton('💾', 'Save', () => this.context.saveDocument());
         this.toolbar.appendChild(saveBtn);
+
+        // Undo / Redo
+        this.undoBtn = this.createToolbarButton('↩', 'Undo (Ctrl+Z)', () => {
+            this.context.historyManager?.undo();
+        }) as HTMLButtonElement;
+        this.undoBtn.disabled = true;
+        this.toolbar.appendChild(this.undoBtn);
+
+        this.redoBtn = this.createToolbarButton('↪', 'Redo (Ctrl+Y)', () => {
+            this.context.historyManager?.redo();
+        }) as HTMLButtonElement;
+        this.redoBtn.disabled = true;
+        this.toolbar.appendChild(this.redoBtn);
 
         // Tools section
         this.toolbar.appendChild(this.createSeparator());
@@ -248,12 +264,15 @@ export class ToolbarManager {
         this.colorToggle.style.verticalAlign = 'middle';
         this.colorToggle.onchange = () => {
             this.useColorForStyling = this.colorToggle!.checked;
-            this.applyToSelectedBlocks(block => {
-                this.ensureBlockDisplaySettings(block).useColor = this.useColorForStyling;
+            const newValue = this.useColorForStyling;
+
+            this.pushBlockRestyleHistory(block => {
+                this.ensureBlockDisplaySettings(block).useColor = newValue;
+                return { useColor: newValue };
             });
-            // BG-Picker ist nur relevant wenn useColor=true
-            if (this.bgColorInput) this.bgColorInput.disabled = !this.useColorForStyling;
-            new Notice(this.useColorForStyling ? 'Using color for styling' : 'Using block-based styling');
+
+            if (this.bgColorInput) this.bgColorInput.disabled = !newValue;
+            new Notice(newValue ? 'Using color for styling' : 'Using block-based styling');
             this.context.drawingManager.redrawAllBlocks();
         };
         colorToggleContainer.appendChild(this.colorToggle);
@@ -276,9 +295,13 @@ export class ToolbarManager {
         this.bgColorInput.style.verticalAlign = 'middle';
         this.bgColorInput.disabled = this.useColorForStyling;
         this.bgColorInput.oninput = () => {
-            this.applyToSelectedBlocks(block => {
-                this.ensureBlockDisplaySettings(block).backgroundColor = this.bgColorInput!.value;
+            const newColor = this.bgColorInput!.value;
+
+            this.pushBlockRestyleHistory(block => {
+                this.ensureBlockDisplaySettings(block).backgroundColor = newColor;
+                return { backgroundColor: newColor };
             });
+
             this.context.drawingManager.redrawAllBlocks();
         };
         this.toolbar.appendChild(this.bgColorInput);
@@ -749,5 +772,42 @@ export class ToolbarManager {
             };
         }
         return block.displaySettings;
+    }
+
+    public updateUndoRedoButtons(canUndo: boolean, canRedo: boolean): void {
+        if (this.undoBtn) this.undoBtn.disabled = !canUndo;
+        if (this.redoBtn) this.redoBtn.disabled = !canRedo;
+    }
+
+    private pushBlockRestyleHistory(
+        apply: (block: Block) => Partial<BlockDisplaySettings>,
+    ): void {
+        const entries: Array<{ blockId: string; oldSettings: Partial<BlockDisplaySettings>; newSettings: Partial<BlockDisplaySettings> }> = [];
+
+        const applyToBlock = (block: Block) => {
+            const oldSettings: Partial<BlockDisplaySettings> = block.displaySettings
+                ? {
+                    useColor: block.displaySettings.useColor,
+                    backgroundColor: block.displaySettings.backgroundColor,
+                    widthMultiplier: block.displaySettings.widthMultiplier,
+                }
+                : {};
+            const newSettings = apply(block);
+            entries.push({ blockId: block.id, oldSettings, newSettings });
+        };
+
+        if (this.context.blockManager.selectedBlockIndices.size === 0) {
+            const block = this.getCurrentBlock();
+            if (block) applyToBlock(block);
+        } else {
+            this.context.blockManager.selectedBlockIndices.forEach(index => {
+                const block = this.context.blocks[index];
+                if (block) applyToBlock(block);
+            });
+        }
+
+        if (entries.length > 0) {
+            this.context.historyManager?.push({ type: 'RESTYLE_BLOCK', entries });
+        }
     }
 }
