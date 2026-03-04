@@ -14,7 +14,7 @@ export class StrokeSelectionManager {
     // Drag state
     public isDragging: boolean = false;
     public dragStartPoint: Point | null = null;
-    public dragOffset: Point = { x: 0, y: 0, t: 0, pressure: 0.5 };
+    public dragOffset: Point = { x: 0, y: 0 };
     private originalStrokePositions: Map<string, Point[]> = new Map();
 
     // Copy buffer
@@ -124,7 +124,7 @@ export class StrokeSelectionManager {
     public startDragging(startPoint: Point): void {
         this.isDragging = true;
         this.dragStartPoint = startPoint;
-        this.dragOffset = { x: 0, y: 0, t: 0, pressure: 0.5 };
+        this.dragOffset = { x: 0, y: 0 };
         this.originalStrokePositions.clear();
 
         // Store original positions
@@ -139,7 +139,7 @@ export class StrokeSelectionManager {
     public updateDraggingSelection(currentPoint: Point, dx: number, dy: number): void {
         if (!this.isDragging || !this.dragStartPoint) return;
 
-        this.dragOffset = { x: dx, y: dy, t: 0, pressure: 0.5 };
+        this.dragOffset = { x: dx, y: dy };
 
         this.selectedStrokes.forEach(strokeId => {
             const originalPoints = this.originalStrokePositions.get(strokeId);
@@ -183,7 +183,7 @@ export class StrokeSelectionManager {
 
         this.isDragging = false;
         this.dragStartPoint = null;
-        this.dragOffset = { x: 0, y: 0, t: 0, pressure: 0.5 };
+        this.dragOffset = { x: 0, y: 0 };
         this.originalStrokePositions.clear();
 
         this.context.saveDocument();
@@ -209,7 +209,7 @@ export class StrokeSelectionManager {
         new Notice(`Copied ${this.copiedStrokes.length} stroke(s)`);
     }
 
-    public pasteStrokes(blockIndex: number, offset: Point = { x: 10, y: 10, t: 0, pressure: 0.5 }): void {
+    public pasteStrokes(blockIndex: number, offset: Point = { x: 10, y: 10 }): void {
         if (this.copiedStrokes.length === 0) return;
 
         const block = this.context.blocks[blockIndex];

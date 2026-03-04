@@ -1,10 +1,6 @@
 export interface Point {
   x: number;
   y: number;
-  t: number; // timestamp in ms
-  pressure?: number; // 0-1, optional
-  tiltX?: number; // -1 to 1, optional
-  tiltY?: number; // -1 to 1, optional
 }
 
 export interface StrokeStyle {
@@ -75,7 +71,6 @@ export interface InkDocument {
   blocks: Block[];
   settings: {
     defaultPen: StrokeStyle;
-    pressureSensitivity: boolean;
     smoothing: number;
   };
   metadata: Record<string, any>;

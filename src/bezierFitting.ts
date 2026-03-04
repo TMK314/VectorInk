@@ -14,11 +14,10 @@ export interface CurveSegment {
 }
 
 export interface CurveFittingOptions {
-    epsilon: number;              // Maximaler Fehler für Segmentakzeptanz
-    minSegmentLength: number;     // Minimale Segmentlänge in Pixeln
-    maxIterations: number;        // Maximale Iterationen für Rekursion
-    curvatureThreshold: number;   // Schwellenwert für Krümmungsänderung
-    usePressure: boolean;         // Druckinformationen verwenden
+    epsilon: number;
+    minSegmentLength: number;
+    maxIterations: number;
+    curvatureThreshold: number;
 }
 
 export class BezierCurveFitter {
@@ -28,9 +27,8 @@ export class BezierCurveFitter {
         this.options = {
             epsilon: options.epsilon ?? 1.5,
             minSegmentLength: options.minSegmentLength ?? 50,
-            maxIterations: options.maxIterations ?? 8,      // war: 4 — zu wenig Rekursion
+            maxIterations: options.maxIterations ?? 8,
             curvatureThreshold: options.curvatureThreshold ?? 0.25,
-            usePressure: options.usePressure ?? false
         };
     }
 
@@ -84,10 +82,6 @@ export class BezierCurveFitter {
             smoothed.push({
                 x: p0.x * 0.25 + p1.x * 0.5 + p2.x * 0.25,
                 y: p0.y * 0.25 + p1.y * 0.5 + p2.y * 0.25,
-                t: p1.t,
-                pressure: (p0.pressure ?? 0.5) * 0.25 +
-                    (p1.pressure ?? 0.5) * 0.5 +
-                    (p2.pressure ?? 0.5) * 0.25
             });
         }
         smoothed.push(deduped[deduped.length - 1]!);
@@ -304,14 +298,10 @@ export class BezierCurveFitter {
             p1: {
                 x: p0.x + tanStart.x * alpha,
                 y: p0.y + tanStart.y * alpha,
-                t: p0.t,
-                pressure: p0.pressure
             },
             p2: {
                 x: p3.x + tanEnd.x * beta,
                 y: p3.y + tanEnd.y * beta,
-                t: p3.t,
-                pressure: p3.pressure
             },
             p3
         };
@@ -420,24 +410,15 @@ export class BezierCurveFitter {
         const u3 = u2 * u;
         const t3 = t2 * t;
 
-        const x = u3 * bezier.p0.x +
-            3 * u2 * t * bezier.p1.x +
-            3 * u * t2 * bezier.p2.x +
-            t3 * bezier.p3.x;
-
-        const y = u3 * bezier.p0.y +
-            3 * u2 * t * bezier.p1.y +
-            3 * u * t2 * bezier.p2.y +
-            t3 * bezier.p3.y;
-
-        // Lineare Interpolation
-        const pressure = (bezier.p0.pressure || 0.5) * (1 - t) + (bezier.p3.pressure || 0.5) * t;
-
         return {
-            x,
-            y,
-            t: bezier.p0.t + (bezier.p3.t - bezier.p0.t) * t,
-            pressure
+            x: u3 * bezier.p0.x +
+                3 * u2 * t * bezier.p1.x +
+                3 * u * t2 * bezier.p2.x +
+                t3 * bezier.p3.x,
+            y: u3 * bezier.p0.y +
+                3 * u2 * t * bezier.p1.y +
+                3 * u * t2 * bezier.p2.y +
+                t3 * bezier.p3.y,
         };
     }
 
@@ -504,10 +485,10 @@ export class BezierCurveFitter {
     private fitLineToBezier(points: Point[]): CubicBezier {
         if (points.length === 0) {
             return {
-                p0: { x: 0, y: 0, t: 0, pressure: 0.5 },
-                p1: { x: 0, y: 0, t: 0, pressure: 0.5 },
-                p2: { x: 0, y: 0, t: 0, pressure: 0.5 },
-                p3: { x: 0, y: 0, t: 0, pressure: 0.5 }
+                p0: { x: 0, y: 0 },
+                p1: { x: 0, y: 0 },
+                p2: { x: 0, y: 0 },
+                p3: { x: 0, y: 0 }
             };
         }
 
@@ -522,15 +503,11 @@ export class BezierCurveFitter {
             p0: p0,
             p1: {
                 x: p0.x + dx / 3,
-                y: p0.y + dy / 3,
-                t: p0.t,
-                pressure: p0.pressure || 0.5
+                y: p0.y + dy / 3
             },
             p2: {
                 x: p0.x + 2 * dx / 3,
-                y: p0.y + 2 * dy / 3,
-                t: p3.t,
-                pressure: p3.pressure || 0.5
+                y: p0.y + 2 * dy / 3
             },
             p3: p3
         };

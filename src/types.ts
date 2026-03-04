@@ -3,8 +3,6 @@ import { CubicBezier } from "bezierFitting";
 export interface Point {
     x: number;
     y: number;
-    t: number; // timestamp
-    pressure?: number;
 }
 
 export interface StrokeStyle {
@@ -19,7 +17,6 @@ export interface Stroke {
     points: Point[];
     bezierCurves?: CubicBezier[];
     style: StrokeStyle;
-    createdAt: string;
 }
 
 export interface BoundingBox {
@@ -67,13 +64,11 @@ export interface InkDocumentData {
     blocks: Block[];
     settings: {
         defaultPen: StrokeStyle;
-        pressureSensitivity: boolean;
         smoothing: number;
     };
     metadata: Record<string, any>;
 }
 
-// Helper type for partial updates
 export type PartialBlock = Partial<Block> & { id: string };
 
 export interface StrokeSelection {
@@ -95,13 +90,12 @@ export interface GridSettings {
     size: number;
     color: string;
     opacity: number;
-    lineWidth: number; // Dicke der Grid-Linien/Punkte
+    lineWidth: number;
 }
 
 export interface BlockDisplaySettings {
     grid: GridSettings;
     useColor: boolean;
     widthMultiplier: number;
-    /** Hintergrundfarbe des Blocks. Wird nur verwendet wenn useColor === false. */
     backgroundColor?: string;
 }
