@@ -645,9 +645,9 @@ export class DrawingManager {
         const t0 = this._perf.beginDraw(block.strokeIds.length);
         const ds = this.getBlockDisplaySettings(block);
         const isDark = this.context.styleManager.isDarkTheme();
-        const bgColor = !ds.useColor
-            ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
-            : (ds.backgroundColor ?? '#ffffff');
+        const bgColor = ds.useColor
+            ? (ds.backgroundColor ?? '#ffffff')
+            : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
 
         let cache = this._strokeCache.get(block.id);
         const needsRebuild = !cache
@@ -658,34 +658,8 @@ export class DrawingManager {
             cache = document.createElement('canvas');
             cache.width = canvas.width;
             cache.height = canvas.height;
-            const cCtx = cache.getContext('2d');
-            if (cCtx) {
-                cCtx.fillStyle = bgColor;
-                cCtx.fillRect(0, 0, cache.width, cache.height);
-            }
             this._strokeCache.set(block.id, cache);
-
-            // Während Radieren: sofort mit allen Strokes rendern (kein defer —
-            // wir sind bereits nach dem Entfernen, Stroke-Zahl ist stabil)
-            if (this.isErasing) {
-                this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
-            } else {
-                const capturedCache = cache;
-                const capturedCanvas = canvas;
-                const idle = (window as any).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 0));
-                idle(() => {
-                    this._renderStrokesToCache(capturedCache, block, ds, bgColor, isDark);
-                    const currentCache = this._strokeCache.get(block.id);
-                    if (currentCache === capturedCache) {
-                        const liveCtx = capturedCanvas.getContext('2d');
-                        if (liveCtx) {
-                            liveCtx.clearRect(0, 0, capturedCanvas.width, capturedCanvas.height);
-                            liveCtx.drawImage(capturedCache, 0, 0);
-                            this.context.strokeSelectionManager.drawSelectionHighlights(capturedCanvas, block);
-                        }
-                    }
-                });
-            }
+            this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -860,29 +834,25 @@ export class DrawingManager {
         const newW = block.bbox.width * dpr;
         const newH = block.bbox.height * dpr;
 
-        // Cache mitvergrößern ohne Inhalt zu verlieren
+        // Cache in neuer Größe aufbauen, alten Inhalt kopieren
         const oldCache = this._strokeCache.get(block.id);
-        if (oldCache) {
-            const newCache = document.createElement('canvas');
-            newCache.width = newW;
-            newCache.height = newH;
-            const cCtx = newCache.getContext('2d');
-            if (cCtx) {
-                // Hintergrund für gesamten neuen Bereich
-                const ds = this.getBlockDisplaySettings(block);
-                const isDark = this.context.styleManager.isDarkTheme();
-                const bgColor = !ds.useColor
-                    ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
-                    : (ds.backgroundColor ?? '#ffffff');
-                cCtx.fillStyle = bgColor;
-                cCtx.fillRect(0, 0, newW, newH);
-                // Alten Cache-Inhalt kopieren (kein Neuzeichnen aller Strokes)
-                cCtx.drawImage(oldCache, 0, 0);
-            }
-            this._strokeCache.set(block.id, newCache);
+        const newCache = document.createElement('canvas');
+        newCache.width = newW;
+        newCache.height = newH;
+        const cCtx = newCache.getContext('2d');
+        if (cCtx) {
+            const ds = this.getBlockDisplaySettings(block);
+            const isDark = this.context.styleManager.isDarkTheme();
+            const bgColor = ds.useColor
+                ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
+                : (ds.backgroundColor ?? '#ffffff');
+            cCtx.fillStyle = bgColor;
+            cCtx.fillRect(0, 0, newW, newH);
+            if (oldCache) cCtx.drawImage(oldCache, 0, 0);
         }
+        this._strokeCache.set(block.id, newCache);
 
-        // Canvas vergrößern (ohne invalidateBlockCache)
+        // Canvas vergrößern — resetting canvas.width löscht Context-State, daher neu aufsetzen
         canvas.width = newW;
         canvas.height = newH;
         const ctx = canvas.getContext('2d');
@@ -890,7 +860,10 @@ export class DrawingManager {
             ctx.scale(dpr, dpr);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
+            // Sofort den Cache aufmalen, damit bisherige Strokes während des Zeichnens sichtbar bleiben
+            ctx.drawImage(newCache, 0, 0);
         }
+
         canvas.style.width = `${block.bbox.width}px`;
         canvas.style.height = `${block.bbox.height}px`;
 
@@ -899,8 +872,6 @@ export class DrawingManager {
             const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
             blockEl.style.minHeight = `${block.bbox.height + (isSelected ? 120 : 80)}px`;
         }
-
-        // Kein drawBlockStrokes hier während des Zeichnens — draw() zeichnet direkt
     }
 
     public resizeCanvas(canvas: HTMLCanvasElement, block: Block): void {
@@ -1300,25 +1271,13 @@ export class DrawingManager {
         const canvases = this.context.blocksContainer.querySelectorAll('canvas');
         canvases.forEach(canvas => {
             const blockId = canvas.closest('.ink-block')?.getAttribute('data-block-id');
-            if (blockId) {
-                const block = this.context.blocks.find(b => b.id === blockId);
-                if (block) {
-                    const ctx = canvas.getContext('2d');
-                    if (ctx) {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!blockId) return;
+            const block = this.context.blocks.find(b => b.id === blockId);
+            if (!block) return;
 
-                        const isDark = this.context.styleManager.isDarkTheme();
-                        const ds = this.getBlockDisplaySettings(block);
-                        const bgColor = ds.useColor
-                            ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
-                            : (ds.backgroundColor ?? '#ffffff');
-                        ctx.fillStyle = bgColor;
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                        this.drawBlockStrokes(canvas, block);
-                    }
-                }
-            }
+            // Cache invalidieren — erzwingt vollständigen Rebuild mit neuen Farben
+            this.invalidateBlockCache(blockId);
+            this._drawBlockStrokesImmediate(canvas as HTMLCanvasElement, block);
         });
     }
 
