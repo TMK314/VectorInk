@@ -2,6 +2,7 @@ import { InkDocumentData, Stroke, Block, Point, StrokeStyle, GridSettings } from
 
 export class InkDocument {
     private data: InkDocumentData;
+    private strokeMap = new Map<string, Stroke>();
 
     constructor(data?: Partial<InkDocumentData>) {
         const now = new Date().toISOString();
@@ -34,7 +35,6 @@ export class InkDocument {
                     color: '#000000',
                     semantic: 'normal'
                 },
-                pressureSensitivity: true,
                 smoothing: 0.3
             },
             metadata: {
@@ -48,7 +48,7 @@ export class InkDocument {
                 ...defaultData.document.grid,
                 ...(data.document.grid || {})
             };
-            
+
             this.data = {
                 ...defaultData,
                 ...data,
@@ -60,6 +60,9 @@ export class InkDocument {
             };
         } else {
             this.data = { ...defaultData, ...data };
+        }
+        for (const s of this.data.strokes) {
+            this.strokeMap.set(s.id, s);
         }
     }
 
@@ -91,10 +94,10 @@ export class InkDocument {
     addStroke(stroke: Omit<Stroke, 'id' | 'createdAt'>): Stroke {
         const newStroke: Stroke = {
             ...stroke,
-            id: crypto.randomUUID(),
-            createdAt: new Date().toISOString()
+            id: crypto.randomUUID()
         };
         this.data.strokes.push(newStroke);
+        this.strokeMap.set(newStroke.id, newStroke);
         this.updateTimestamp();
         return newStroke;
     }
@@ -143,14 +146,16 @@ export class InkDocument {
     }
 
     removeStroke(strokeId: string): boolean {
-        const index = this.data.strokes.findIndex(s => s.id === strokeId);
-        if (index >= 0) {
-            this.data.strokes.splice(index, 1);
-            this.updateTimestamp();
-            return true;
-        }
-        return false;
+    if (!this.strokeMap.has(strokeId)) return false;
+    this.strokeMap.delete(strokeId);
+    const index = this.data.strokes.findIndex(s => s.id === strokeId);
+    if (index >= 0) {
+        this.data.strokes.splice(index, 1);
+        this.updateTimestamp();
+        return true;
     }
+    return false;
+}
 
     // Update timestamp
     updateTimestamp(): void {
@@ -170,8 +175,8 @@ export class InkDocument {
 
     // Get stroke by ID
     getStroke(strokeId: string): Stroke | undefined {
-        return this.data.strokes.find(s => s.id === strokeId);
-    }
+    return this.strokeMap.get(strokeId);
+}
 
     // Get block by ID
     getBlock(blockId: string): Block | undefined {
@@ -190,8 +195,7 @@ export class InkDocument {
                 id: strokeId,
                 points: updates.points ?? originalStroke.points,
                 bezierCurves: updates.bezierCurves ?? originalStroke.bezierCurves,
-                style: updates.style ?? originalStroke.style,
-                createdAt: updates.createdAt ?? originalStroke.createdAt,
+                style: updates.style ?? originalStroke.style
             };
 
             this.data.strokes[index] = updatedStroke;

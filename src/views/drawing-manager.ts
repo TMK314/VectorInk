@@ -34,6 +34,8 @@ export class DrawingManager {
     public dragOffset: Point = { x: 0, y: 0 };
 
     private _strokeCache = new Map<string, HTMLCanvasElement>();
+    private _spatialIndex: Map<string, string[]> | null = null;
+    private readonly _CELL = 80; // logische Pixel pro Zelle
     private _currentDrawStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle> | null = null;
 
     // Block height expansion
@@ -63,8 +65,8 @@ export class DrawingManager {
         const getPoint = (e: PointerEvent): Point => {
             const rect = canvas.getBoundingClientRect();
             return {
-                x: (e.clientX - rect.left) * (canvas.width / rect.width),
-                y: (e.clientY - rect.top) * (canvas.height / rect.height),
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
             };
         };
 
@@ -274,6 +276,9 @@ export class DrawingManager {
             this.isErasing = true;
             lastErasePoint = point;
 
+            const block = this.context.blocks[blockIndex];
+            if (block) this._buildSpatialIndex(block);
+
             this.eraseAtPoint(canvas, blockIndex, point);
         };
 
@@ -306,18 +311,19 @@ export class DrawingManager {
         const stopErasing = () => {
             this.isErasing = false;
             lastErasePoint = null;
+            this._spatialIndex = null;
 
             const block = this.context.blocks[blockIndex];
-            if (block) {
-                // Jetzt einmalig Cache invalidieren und neu aufbauen
-                this.invalidateBlockCache(block.id);
-                const canvas = this.context.blockManager.getCanvasForBlock(block.id);
-                if (canvas) this.drawBlockStrokes(canvas, block);
+            if (!block) return;
 
-                setTimeout(() => {
-                    this.adjustBlockSize(block.id);
-                }, 50);
+            const blockCanvas = this.context.blockManager.getCanvasForBlock(block.id);
+            if (blockCanvas) {
+                // Einmaliger vollständiger Rebuild nach dem Löschen
+                this.invalidateBlockCache(block.id);
+                this._drawBlockStrokesImmediate(blockCanvas, block);
             }
+            // Größe nur einmal am Ende anpassen — niemals während des Löschens
+            this.adjustBlockSizeAfterErasing(block.id);
         };
 
         const startSelection = (point: Point, e: MouseEvent) => {
@@ -647,24 +653,26 @@ export class DrawingManager {
         const isDark = this.context.styleManager.isDarkTheme();
         const bgColor = ds.useColor
             ? (ds.backgroundColor ?? '#ffffff')
-            : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
+            : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'));
 
         let cache = this._strokeCache.get(block.id);
+        // Cache-Größe in logischen Pixeln (block.bbox), nicht physischen (canvas.width)
         const needsRebuild = !cache
-            || cache.width !== canvas.width
-            || cache.height !== canvas.height;
+            || cache.width !== block.bbox.width
+            || cache.height !== block.bbox.height;
 
         if (needsRebuild) {
             cache = document.createElement('canvas');
-            cache.width = canvas.width;
-            cache.height = canvas.height;
+            cache.width = block.bbox.width;   // logische Größe
+            cache.height = block.bbox.height;
             this._strokeCache.set(block.id, cache);
             this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (cache)
-            ctx.drawImage(cache, 0, 0);
+        // drawImage ohne explizite dw/dh: logischer Cache auf skaliertem ctx
+        // → Bild füllt exakt die logische Zeichenfläche
+        if (cache) ctx.drawImage(cache, 0, 0);
 
         if (this.isDrawing && this.currentStroke.length >= 2) {
             const currentBlock = this.context.blocks[this.context.currentBlockIndex];
@@ -714,9 +722,6 @@ export class DrawingManager {
         bgColor: string,
         isDark: boolean
     ): void {
-        // TEMP DEBUG — zeigt wer den Rebuild auslöst
-        console.trace(`[InkPerf] Cache REBUILD — ${block.strokeIds.length} strokes`);
-
         if (!this.context.document) return;
         const ctx = cache.getContext('2d');
         if (!ctx) return;
@@ -728,7 +733,7 @@ export class DrawingManager {
         this.drawGrid(cache, block);
 
         for (const strokeId of block.strokeIds) {
-            const stroke = this.context.document.getStroke(strokeId);
+            const stroke = this.context.document.getStroke(strokeId); // O(1) via Map
             if (!stroke) continue;
             const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
                 block.type, stroke.style, ds.useColor, ds.widthMultiplier
@@ -831,14 +836,12 @@ export class DrawingManager {
         }
 
         const dpr = window.devicePixelRatio || 1;
-        const newW = block.bbox.width * dpr;
-        const newH = block.bbox.height * dpr;
 
-        // Cache in neuer Größe aufbauen, alten Inhalt kopieren
+        // Cache in logischer Größe erweitern, Inhalt kopieren
         const oldCache = this._strokeCache.get(block.id);
         const newCache = document.createElement('canvas');
-        newCache.width = newW;
-        newCache.height = newH;
+        newCache.width = block.bbox.width;    // logisch
+        newCache.height = block.bbox.height;
         const cCtx = newCache.getContext('2d');
         if (cCtx) {
             const ds = this.getBlockDisplaySettings(block);
@@ -847,21 +850,26 @@ export class DrawingManager {
                 ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'))
                 : (ds.backgroundColor ?? '#ffffff');
             cCtx.fillStyle = bgColor;
-            cCtx.fillRect(0, 0, newW, newH);
-            if (oldCache) cCtx.drawImage(oldCache, 0, 0);
+            cCtx.fillRect(0, 0, newCache.width, newCache.height);
+            if (oldCache) cCtx.drawImage(oldCache, 0, 0); // logisch → logisch, 1:1 ✓
         }
         this._strokeCache.set(block.id, newCache);
 
-        // Canvas vergrößern — resetting canvas.width löscht Context-State, daher neu aufsetzen
-        canvas.width = newW;
-        canvas.height = newH;
+        // Canvas (physisch) vergrößern — canvas.width-Zuweisung löscht Kontext-State
+        canvas.width = block.bbox.width * dpr;
+        canvas.height = block.bbox.height * dpr;
         const ctx = canvas.getContext('2d');
         if (ctx) {
             ctx.scale(dpr, dpr);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            // Sofort den Cache aufmalen, damit bisherige Strokes während des Zeichnens sichtbar bleiben
+            // Logischer Cache auf skaliertem Kontext: füllt exakt die Zeichenfläche
             ctx.drawImage(newCache, 0, 0);
+            // Aktuell gezeichneten Stroke wiederherstellen (liegt nicht im Cache)
+            if (this.isDrawing && this.currentStroke.length >= 2) {
+                const style = this._currentDrawStyle ?? this.currentPenStyle;
+                this.drawLinearStroke(ctx, this.currentStroke, style);
+            }
         }
 
         canvas.style.width = `${block.bbox.width}px`;
@@ -907,41 +915,31 @@ export class DrawingManager {
         const canvas = this.context.blockManager.getCanvasForBlock(blockId);
         if (!canvas) return;
 
-        // Finde die äußersten Punkte der verbleibenden Striche
         let maxX = 0;
         let maxY = 0;
         let hasStrokes = false;
 
         for (const strokeId of block.strokeIds) {
-            const stroke = this.context.document.strokes.find(s => s.id === strokeId);
+            const stroke = this.context.document.getStroke(strokeId); // O(1) via Map
             if (!stroke || stroke.points.length === 0) continue;
-
             hasStrokes = true;
-
             for (const point of stroke.points) {
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
+                if (point.x > maxX) maxX = point.x;
+                if (point.y > maxY) maxY = point.y;
             }
         }
 
         if (!hasStrokes) {
-            // Wenn keine Striche mehr, zurücksetzen auf Standardgröße
             block.bbox.width = 760;
             block.bbox.height = 200;
         } else {
-            // Berechne benötigte Größe mit Padding
             const neededWidth = Math.max(maxX + 100, 760);
             const neededHeight = Math.max(maxY + 100, 200);
-            // Reduziere nur wenn deutlich größer als benötigt (> 150px extra)
-            if (block.bbox.width - neededWidth > 150) {
-                block.bbox.width = neededWidth;
-            }
-            if (block.bbox.height - neededHeight > 150) {
-                block.bbox.height = neededHeight;
-            }
+            // Konservativ schrumpfen: nur wenn > 250px Überschuss
+            if (block.bbox.width - neededWidth > 250) block.bbox.width = neededWidth;
+            if (block.bbox.height - neededHeight > 250) block.bbox.height = neededHeight;
         }
 
-        // Canvas aktualisieren
         this.resizeCanvas(canvas, block);
         this.drawBlockStrokes(canvas, block);
     }
@@ -993,15 +991,130 @@ export class DrawingManager {
         }
     }
 
+    private _buildSpatialIndex(block: Block): void {
+        this._spatialIndex = new Map();
+        if (!this.context.document) return;
+        for (const strokeId of block.strokeIds) {
+            const stroke = this.context.document.getStroke(strokeId);
+            if (stroke) this._indexStroke(strokeId, stroke.points);
+        }
+    }
+
+    private _indexStroke(strokeId: string, points: Point[]): void {
+        if (!this._spatialIndex) return;
+        const seen = new Set<string>();
+        for (const p of points) {
+            const key = `${Math.floor(p.x / this._CELL)},${Math.floor(p.y / this._CELL)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            let arr = this._spatialIndex.get(key);
+            if (!arr) { arr = []; this._spatialIndex.set(key, arr); }
+            arr.push(strokeId);
+        }
+    }
+
+    private _unindexStroke(strokeId: string, points: Point[]): void {
+        if (!this._spatialIndex) return;
+        const seen = new Set<string>();
+        for (const p of points) {
+            const key = `${Math.floor(p.x / this._CELL)},${Math.floor(p.y / this._CELL)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const arr = this._spatialIndex.get(key);
+            if (arr) {
+                const i = arr.indexOf(strokeId);
+                if (i >= 0) arr.splice(i, 1);
+            }
+        }
+    }
+
+    private _candidateStrokes(point: Point, radius: number): Set<string> {
+        const result = new Set<string>();
+        if (!this._spatialIndex) return result;
+        const x0 = Math.floor((point.x - radius) / this._CELL);
+        const x1 = Math.floor((point.x + radius) / this._CELL);
+        const y0 = Math.floor((point.y - radius) / this._CELL);
+        const y1 = Math.floor((point.y + radius) / this._CELL);
+        for (let cx = x0; cx <= x1; cx++) {
+            for (let cy = y0; cy <= y1; cy++) {
+                const arr = this._spatialIndex.get(`${cx},${cy}`);
+                if (arr) for (const id of arr) result.add(id);
+            }
+        }
+        return result;
+    }
+
+    private _patchCacheRect(
+        cache: HTMLCanvasElement,
+        block: Block,
+        ds: BlockDisplaySettings,
+        bgColor: string,
+        isDark: boolean,
+        x: number, y: number, w: number, h: number,
+        margin: number
+    ): void {
+        const ctx = cache.getContext('2d');
+        if (!ctx || !this.context.document) return;
+
+        const rx = Math.max(0, x - margin);
+        const ry = Math.max(0, y - margin);
+        const rw = Math.min(cache.width - rx, w + margin * 2);
+        const rh = Math.min(cache.height - ry, h + margin * 2);
+        if (rw <= 0 || rh <= 0) return;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(rx, ry, rw, rh);
+        ctx.clip();
+
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(rx, ry, rw, rh);
+
+        // Grid im Dirty-Rect neu zeichnen (durch Clip begrenzt)
+        this.drawGrid(cache, block);
+
+        // Nur Strokes die den Dirty-Rect schneiden neu zeichnen
+        for (const strokeId of block.strokeIds) {
+            const stroke = this.context.document.getStroke(strokeId);
+            if (!stroke) continue;
+
+            // Schnittprüfung anhand der Punkte
+            let intersects = false;
+            for (const p of stroke.points) {
+                if (p.x >= rx && p.x <= rx + rw && p.y >= ry && p.y <= ry + rh) {
+                    intersects = true; break;
+                }
+            }
+            if (!intersects) continue;
+
+            const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
+                block.type, stroke.style, ds.useColor, ds.widthMultiplier
+            );
+            if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
+                this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
+            } else if (stroke.points.length >= 2) {
+                this.drawLinearStroke(ctx, stroke.points, displayStyle);
+            }
+        }
+
+        ctx.restore();
+    }
+
     private eraseAtPoint(canvas: HTMLCanvasElement, blockIndex: number, point: Point): void {
         const block = this.context.blocks[blockIndex];
         if (!block || !this.context.document) return;
 
         const eraserRadius = this.currentPenStyle.width * 5;
+
+        const candidates = this._spatialIndex
+            ? this._candidateStrokes(point, eraserRadius)
+            : new Set(block.strokeIds);
+
         const strokeIdsToRemove: string[] = [];
 
         if (this.eraserMode === 'stroke') {
-            for (const strokeId of block.strokeIds) {
+            for (const strokeId of candidates) {
+                if (!block.strokeIds.includes(strokeId)) continue;
                 const stroke = this.context.document.getStroke(strokeId);
                 if (!stroke) continue;
 
@@ -1013,9 +1126,9 @@ export class DrawingManager {
                 }
                 if (!hit && stroke.points.length >= 2) {
                     for (let i = 0; i < stroke.points.length - 1; i++) {
-                        const p1 = stroke.points[i];
-                        const p2 = stroke.points[i + 1];
-                        if (p1 && p2 && this.distanceToLineSegment(point, p1, p2) <= eraserRadius) {
+                        const p1 = stroke.points[i]!;
+                        const p2 = stroke.points[i + 1]!;
+                        if (this.distanceToLineSegment(point, p1, p2) <= eraserRadius) {
                             hit = true; break;
                         }
                     }
@@ -1023,7 +1136,8 @@ export class DrawingManager {
                 if (hit) strokeIdsToRemove.push(strokeId);
             }
         } else {
-            for (const strokeId of block.strokeIds) {
+            for (const strokeId of candidates) {
+                if (!block.strokeIds.includes(strokeId)) continue;
                 const stroke = this.context.document.getStroke(strokeId);
                 if (!stroke) continue;
                 for (const p of stroke.points) {
@@ -1036,13 +1150,17 @@ export class DrawingManager {
 
         if (strokeIdsToRemove.length === 0) return;
 
-        block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
-        strokeIdsToRemove.forEach(id => this.context.document?.removeStroke(id));
+        for (const strokeId of strokeIdsToRemove) {
+            const stroke = this.context.document.getStroke(strokeId);
+            if (stroke) this._unindexStroke(strokeId, stroke.points);
+        }
 
-        // Cache invalidieren damit der nächste Frame den korrekten Zustand zeigt
+        block.strokeIds = block.strokeIds.filter(id => !strokeIdsToRemove.includes(id));
+        strokeIdsToRemove.forEach(id => this.context.document!.removeStroke(id));
+
+        // Cache invaliden — Rebuild beim nächsten RAF-Frame
         this.invalidateBlockCache(block.id);
 
-        // Redraw via RAF — maximal 1 Rebuild pro Frame, egal wie viele Strokes gelöscht werden
         if (!this._eraseRafPending) {
             this._eraseRafPending = true;
             this._eraseRafCanvas = canvas;
@@ -1095,74 +1213,55 @@ export class DrawingManager {
         }
 
         const isSelected = this.context.blocks.findIndex(b => b.id === block.id) === this.context.currentBlockIndex;
-
-        const MIN_WIDTH = 760;
-        const MIN_HEIGHT_SELECTED = 200;
-        const MIN_HEIGHT_UNSELECTED = 150;
-        const MIN_HEIGHT = isSelected ? MIN_HEIGHT_SELECTED : MIN_HEIGHT_UNSELECTED;
+        const MIN_HEIGHT = isSelected ? 200 : 150;
 
         if (block.strokeIds.length === 0) {
-            return {
-                width: MIN_WIDTH,
-                height: MIN_HEIGHT
-            };
+            return { width: block.bbox.width, height: MIN_HEIGHT };
         }
 
-        let minX = Infinity;
-        let maxX = -Infinity;
-        let minY = Infinity;
         let maxY = -Infinity;
         let hasStrokes = false;
 
         for (const strokeId of block.strokeIds) {
-            const stroke = this.context.document.strokes.find(s => s.id === strokeId);
+            const stroke = this.context.document.getStroke(strokeId);
             if (!stroke || stroke.points.length === 0) continue;
-
             hasStrokes = true;
-
             for (const point of stroke.points) {
-                minX = Math.min(minX, point.x);
-                maxX = Math.max(maxX, point.x);
-                minY = Math.min(minY, point.y);
-                maxY = Math.max(maxY, point.y);
+                if (point.y > maxY) maxY = point.y;
             }
         }
 
-        if (!hasStrokes || minX === Infinity || maxX === -Infinity || minY === Infinity || maxY === -Infinity) {
-            return {
-                width: MIN_WIDTH,
-                height: MIN_HEIGHT
-            };
+        if (!hasStrokes || maxY === -Infinity) {
+            return { width: block.bbox.width, height: MIN_HEIGHT };
         }
 
-        const horizontalPadding = 80;
         const verticalPadding = 60;
+        const calculatedHeight = Math.max(MIN_HEIGHT, maxY + verticalPadding);
 
-        let calculatedWidth = maxX - minX + horizontalPadding;
-        let calculatedHeight = maxY - minY + verticalPadding;
-
-        calculatedWidth = Math.max(MIN_WIDTH, calculatedWidth);
-        calculatedHeight = Math.max(MIN_HEIGHT, calculatedHeight);
-
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 800;
-        calculatedWidth = Math.min(MAX_WIDTH, calculatedWidth);
-        calculatedHeight = Math.min(MAX_HEIGHT, calculatedHeight);
-
-        const currentHeight = block.bbox.height;
-        const shrinkThreshold = 80;
-
-        if (currentHeight - calculatedHeight > shrinkThreshold) {
+        // Breite nur für Drawing-Blöcke berechnen und anpassen
+        if (block.type === 'drawing') {
+            let maxX = -Infinity;
+            for (const strokeId of block.strokeIds) {
+                const stroke = this.context.document.getStroke(strokeId);
+                if (!stroke) continue;
+                for (const point of stroke.points) {
+                    if (point.x > maxX) maxX = point.x;
+                }
+            }
+            const MIN_WIDTH = 760;
+            const calculatedWidth = Math.max(MIN_WIDTH, maxX + 80);
+            const shrinkThreshold = 250;
             return {
-                width: calculatedWidth,
-                height: calculatedHeight
-            };
-        } else {
-            return {
-                width: Math.max(block.bbox.width, MIN_WIDTH),
-                height: Math.max(block.bbox.height, MIN_HEIGHT)
+                width: block.bbox.width - calculatedWidth > shrinkThreshold ? calculatedWidth : block.bbox.width,
+                height: block.bbox.height - calculatedHeight > shrinkThreshold ? calculatedHeight : block.bbox.height,
             };
         }
+
+        // Alle anderen Typen: nur Höhe anpassen, Breite unveränderlich
+        return {
+            width: block.bbox.width,
+            height: block.bbox.height - calculatedHeight > 250 ? calculatedHeight : block.bbox.height,
+        };
     }
 
     public adjustBlockSize(blockId: string): void {
