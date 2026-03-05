@@ -373,7 +373,7 @@ export class StrokeSelectionManager {
         if (!ctx) return;
 
         ctx.save();
-        ctx.strokeStyle = 'var(--interactive-accent)';
+        ctx.strokeStyle = this.context.styleManager.isDarkTheme() ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.8)';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
 

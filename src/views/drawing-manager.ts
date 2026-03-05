@@ -396,8 +396,8 @@ export class DrawingManager {
                 selectionBox = document.createElement('div');
                 selectionBox.className = 'stroke-selection-box';
                 selectionBox.style.position = 'absolute';
-                selectionBox.style.border = '2px dashed var(--interactive-accent)';
-                selectionBox.style.background = 'rgba(var(--interactive-accent-rgb), 0.1)';
+                const colors = this.getSelectionColors();
+                this.applySelectionBoxTheme(selectionBox);
                 selectionBox.style.pointerEvents = 'none';
                 selectionBox.style.zIndex = '1000';
 
@@ -1415,6 +1415,8 @@ export class DrawingManager {
     }
 
     public setTool(tool: 'pen' | 'eraser' | 'selection'): void {
+        if (this.currentTool === tool) return;
+
         this.currentTool = tool;
 
         if (tool !== 'pen') {
@@ -1425,7 +1427,14 @@ export class DrawingManager {
             this.isErasing = false;
         }
 
-        new Notice(`Tool set to: ${tool}`);
+        // Sobald wir das Selection-Tool verlassen → Auswahl aufheben
+        if (tool !== 'selection') {
+            this.context.strokeSelectionManager.selectedStrokes.clear();
+            this.dragOffset = { x: 0, y: 0 };
+
+            // Canvas neu zeichnen, damit Selection-Overlay verschwindet
+            this.context.drawingManager.redrawAllBlocks();
+        }
     }
 
     public updateBlock(updates: PartialBlock): void {
@@ -1641,4 +1650,33 @@ export class DrawingManager {
 
         this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
     }
+
+    private getSelectionColors(): { border: string; background: string } {
+        const styles = getComputedStyle(document.body);
+
+        const accent = styles.getPropertyValue('--interactive-accent').trim() || '#7c3aed';
+
+        // Hex → RGB umrechnen
+        const hex = accent.replace('#', '');
+        const bigint = parseInt(hex.length === 3
+            ? hex.split('').map(c => c + c).join('')
+            : hex, 16);
+
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        console.log("Border color:", accent, "→ RGB:", r, g, b);
+
+        return {
+            border: `2px dashed ${accent}`,
+            background: `rgba(${r}, ${g}, ${b}, 0.15)`
+        };
+    }
+
+    private applySelectionBoxTheme(selectionBox: HTMLElement): void {
+        selectionBox.style.border = '2px dashed var(--interactive-accent)';
+        selectionBox.style.background =
+            'color-mix(in srgb, var(--interactive-accent) 20%, transparent)';
+    }
+
 }
