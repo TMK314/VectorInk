@@ -46,11 +46,14 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     private async loadDocument(): Promise<void> {
         try {
             const raw = await this.plugin.app.vault.read(this.file);
-            this.inkDoc = raw ? new InkDocument(JSON.parse(raw)) : new InkDocument();
+            // fromJSON dekodiert base64-Punkte (v2) und handhabt Rueckwaertskompatibilitaet (v1).
+            // new InkDocument(JSON.parse(raw)) wuerde die Punkte NICHT dekodieren.
+            this.inkDoc = raw?.trim() ? InkDocument.fromJSON(raw) : new InkDocument();
             this.blocks = this.inkDoc
                 ? [...this.inkDoc.blocks].sort((a, b) => a.order - b.order)
                 : [];
         } catch (e) {
+            console.error('InkEmbedRenderer: loadDocument failed', e);
             this.inkDoc = new InkDocument();
             this.blocks = [];
         }
@@ -59,12 +62,19 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     private async saveDocument(): Promise<void> {
         if (!this.inkDoc) return;
         try {
-            const data = this.inkDoc.getData();
-            data.blocks = this.blocks.map((b, i) => ({ ...b, order: i }));
-            const usedIds = new Set(data.blocks.flatMap(b => b.strokeIds));
-            data.strokes = data.strokes.filter(s => usedIds.has(s.id));
-            this.inkDoc = new InkDocument(data);
-            await this.plugin.app.vault.modify(this.file, JSON.stringify(data, null, 2));
+            // Block-Reihenfolge und Stroke-Filterung vor dem Serialisieren anwenden
+            for (let i = 0; i < this.blocks.length; i++) {
+                const b = this.blocks[i]!;
+                b.order = i;
+                this.inkDoc.addBlock(b);
+            }
+            // Strokes entfernen, die keinem Block mehr gehoeren
+            const usedIds = new Set(this.blocks.flatMap(b => b.strokeIds));
+            for (const stroke of [...this.inkDoc.strokes]) {
+                if (!usedIds.has(stroke.id)) this.inkDoc.removeStroke(stroke.id);
+            }
+            // toJSON() verwendet base64-Kodierung (v2) — konsistent mit InkView
+            await this.plugin.app.vault.modify(this.file, this.inkDoc.toJSON());
         } catch (e) {
             new Notice('Ink: Speichern fehlgeschlagen');
         }
@@ -126,7 +136,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         svg.style.width = '100%';
         svg.style.display = 'block';
-        svg.style.height = `${Math.min(block.bbox.height, 400)}px`;
+        svg.style.height = `${block.bbox.height}px`;
 
         // Hintergrund: CSS-Variable bei useColor=false (passt sich dem Obsidian-Theme an), sonst gespeicherte Block-Farbe
         const useColor = block.displaySettings?.useColor ?? false;

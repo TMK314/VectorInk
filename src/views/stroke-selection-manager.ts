@@ -271,7 +271,16 @@ export class StrokeSelectionManager {
                 if (stroke && idx >= 0) {
                     entries.push({
                         blockId: currentBlock.id,
-                        stroke: { ...stroke, points: stroke.points.map(p => ({ ...p })) },
+                        stroke: {
+                            ...stroke,
+                            points: stroke.points.map(p => ({ ...p })),
+                            bezierCurves: stroke.bezierCurves?.map(c => ({
+                                ...c,
+                                p0: { ...c.p0 }, p1: { ...c.p1 },
+                                p2: { ...c.p2 }, p3: { ...c.p3 }
+                            })),
+                            style: { ...stroke.style }
+                        },
                         blockStrokeIdIndex: idx
                     });
                 }
@@ -315,9 +324,14 @@ export class StrokeSelectionManager {
             blockId: currentBlock.id,
             entries: historyEntries
         });
+        // Cache invalidieren und sofort synchron neu rendern, damit die neuen Styles sichtbar werden
+        this.context.drawingManager.invalidateBlockCache(currentBlock.id);
+        const canvas = this.context.blockManager.getCanvasForBlock(currentBlock.id);
+        if (canvas) {
+            this.context.drawingManager.renderBlockSync(canvas, currentBlock);
+        }
     }
 
-    this.context.blockManager.renderBlocks();
     new Notice(`Updated style for ${this.selectedStrokes.size} stroke(s)`);
 }
 
@@ -340,10 +354,11 @@ export class StrokeSelectionManager {
             if (!stroke) return;
 
             for (const point of stroke.points) {
-                minX = Math.min(minX, point.x);
-                minY = Math.min(minY, point.y);
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
+                const halfWidth = (stroke.style?.width ?? 2) / 2;
+                minX = Math.min(minX, point.x - halfWidth);
+                minY = Math.min(minY, point.y - halfWidth);
+                maxX = Math.max(maxX, point.x + halfWidth);
+                maxY = Math.max(maxY, point.y + halfWidth);
                 hasPoints = true;
             }
         });
@@ -382,16 +397,17 @@ export class StrokeSelectionManager {
             // Nur zeichnen, wenn der Strich zu diesem Block gehört
             if (!stroke || !block.strokeIds.includes(strokeId)) return;
 
-            // Bounding Box des einzelnen Strichs berechnen
+            // Bounding Box des einzelnen Strichs berechnen (inkl. Strichdicke)
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const halfWidth = (stroke.style?.width ?? 2) / 2;
             for (const point of stroke.points) {
-                minX = Math.min(minX, point.x);
-                minY = Math.min(minY, point.y);
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
+                minX = Math.min(minX, point.x - halfWidth);
+                minY = Math.min(minY, point.y - halfWidth);
+                maxX = Math.max(maxX, point.x + halfWidth);
+                maxY = Math.max(maxY, point.y + halfWidth);
             }
 
-            const padding = 3;
+            const padding = Math.max(3, halfWidth + 2);
             ctx.strokeRect(
                 minX - padding, minY - padding,
                 maxX - minX + 2 * padding,

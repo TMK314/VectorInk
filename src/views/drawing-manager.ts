@@ -39,6 +39,7 @@ export class DrawingManager {
     private _currentDrawStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle> | null = null;
 
     public _currentErasedStrokes: Array<{ stroke: Stroke; blockStrokeIdIndex: number }> = [];
+    private _eraseSessionOriginalIds: Map<string, number> = new Map();
 
     constructor(context: InkView) {
         this.context = context;
@@ -287,10 +288,16 @@ export class DrawingManager {
 
             this._currentErasedStrokes = [];
 
+            // Original-Reihenfolge sichern – Indizes bleiben korrekt, auch wenn
+            // während der Session mehrere eraseAtPoint-Aufrufe Strokes entfernen.
+            const block = this.context.blocks[blockIndex];
+            this._eraseSessionOriginalIds = new Map(
+                (block?.strokeIds ?? []).map((id, i) => [id, i] as [string, number])
+            );
+
             this.isErasing = true;
             lastErasePoint = point;
 
-            const block = this.context.blocks[blockIndex];
             if (block) this._buildSpatialIndex(block);
 
             this.eraseAtPoint(canvas, blockIndex, point);
@@ -542,28 +549,33 @@ export class DrawingManager {
                 }
             });
 
-            // History für Move
+            // Tatsächliche Verschiebung ermitteln
             const movedIds = [...this.context.strokeSelectionManager.selectedStrokes];
+            let actualDx = 0, actualDy = 0;
             if (movedIds.length > 0 && originalStrokeData.size > 0) {
                 const firstId = movedIds[0];
                 const origData = firstId ? originalStrokeData.get(firstId) : undefined;
                 const currentStroke = firstId ? this.context.document?.getStroke(firstId) : undefined;
                 if (origData && currentStroke && origData.points[0] && currentStroke.points[0]) {
-                    const dx = currentStroke.points[0].x - origData.points[0].x;
-                    const dy = currentStroke.points[0].y - origData.points[0].y;
-                    if (dx !== 0 || dy !== 0) {
-                        const block = this.context.blocks[blockIndex];
-                        if (block) {
-                            this.context.historyManager?.push({
-                                type: 'MOVE_STROKES',
-                                blockId: block.id,
-                                strokeIds: movedIds,
-                                dx,
-                                dy
-                            });
-                        }
-                    }
+                    actualDx = currentStroke.points[0].x - origData.points[0].x;
+                    actualDy = currentStroke.points[0].y - origData.points[0].y;
                 }
+            }
+
+            // History + Speichern nur bei echter Bewegung
+            if (actualDx !== 0 || actualDy !== 0) {
+                const block = this.context.blocks[blockIndex];
+                if (block) {
+                    this.context.historyManager?.push({
+                        type: 'MOVE_STROKES',
+                        blockId: block.id,
+                        strokeIds: movedIds,
+                        dx: actualDx,
+                        dy: actualDy
+                    });
+                }
+                this.context.saveDocument();
+                new Notice(`Moved ${this.context.strokeSelectionManager.selectedStrokes.size} stroke(s)`);
             }
 
             // Cache invalidieren, damit Strokes bei nächstem Render an neuer Position gezeichnet werden
@@ -580,9 +592,6 @@ export class DrawingManager {
             if (block) {
                 this.adjustBlockSize(block.id);
             }
-
-            this.context.saveDocument();
-            new Notice(`Moved ${this.context.strokeSelectionManager.selectedStrokes.size} stroke(s)`);
         };
 
         const redrawCanvasWithSelection = () => {
@@ -1226,14 +1235,25 @@ export class DrawingManager {
             if (stroke) this._unindexStroke(strokeId, stroke.points);
         }
 
-        // Für History: Strokes mit Originalindex sichern
+        // Für History: Strokes mit Original-Index sichern (Reihenfolge aus Session-Start)
         strokeIdsToRemove.forEach(id => {
-            const idx = block.strokeIds.indexOf(id);
+            const originalIdx = this._eraseSessionOriginalIds.has(id)
+                ? this._eraseSessionOriginalIds.get(id)!
+                : block.strokeIds.indexOf(id);
             const stroke = this.context.document?.getStroke(id);
-            if (stroke && idx >= 0) {
+            if (stroke && originalIdx >= 0) {
                 this._currentErasedStrokes.push({
-                    stroke: { ...stroke, points: stroke.points.map(p => ({ ...p })), bezierCurves: stroke.bezierCurves?.map(c => ({ ...c })) },
-                    blockStrokeIdIndex: idx
+                    stroke: {
+                        ...stroke,
+                        points: stroke.points.map(p => ({ ...p })),
+                        bezierCurves: stroke.bezierCurves?.map(c => ({
+                            ...c,
+                            p0: { ...c.p0 }, p1: { ...c.p1 },
+                            p2: { ...c.p2 }, p3: { ...c.p3 }
+                        })),
+                        style: { ...stroke.style }
+                    },
+                    blockStrokeIdIndex: originalIdx
                 });
             }
         });
@@ -1636,10 +1656,10 @@ export class DrawingManager {
                 || (isDark ? '#1a1a1a' : '#ffffff'))
             : (ds.backgroundColor ?? '#ffffff');
 
-        // Frischen Cache synchron aufbauen
+        // Frischen Cache synchron aufbauen — logische Größe (konsistent mit _drawBlockStrokesImmediate)
         const cache = document.createElement('canvas');
-        cache.width = canvas.width;
-        cache.height = canvas.height;
+        cache.width = block.bbox.width;
+        cache.height = block.bbox.height;
         this._strokeCache.set(block.id, cache);
 
         this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
