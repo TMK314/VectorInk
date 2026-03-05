@@ -330,7 +330,18 @@ export class DrawingManager {
                     this.context.historyManager?.push({
                         type: 'ERASE_STROKES',
                         blockId: block.id,
-                        strokes: this._currentErasedStrokes.map(e => e.stroke),
+                        strokes: this._currentErasedStrokes.map(e => ({
+                            ...e.stroke,
+                            points: e.stroke.points.map(p => ({ ...p })),
+                            bezierCurves: e.stroke.bezierCurves?.map(c => ({
+                                ...c,
+                                p0: { ...c.p0 },
+                                p1: { ...c.p1 },
+                                p2: { ...c.p2 },
+                                p3: { ...c.p3 }
+                            })),
+                            style: { ...e.stroke.style }
+                        })),
                         blockStrokeIdIndices: this._currentErasedStrokes.map(e => e.blockStrokeIdIndex)
                     });
                 }
@@ -553,6 +564,12 @@ export class DrawingManager {
                         }
                     }
                 }
+            }
+
+            // Cache invalidieren, damit Strokes bei nächstem Render an neuer Position gezeichnet werden
+            const moveBlock = this.context.blocks[blockIndex];
+            if (moveBlock) {
+                this.invalidateBlockCache(moveBlock.id);
             }
 
             isDraggingSelection = false;
@@ -1593,4 +1610,35 @@ export class DrawingManager {
             this.rafExecuted = 0;
         }
     };
+
+    /**
+ * Rendert einen Block sofort synchron auf den Canvas – ohne RAF/Idle-Deferral.
+ * Nur für History-Operationen (Undo/Redo) verwenden.
+ */
+    public renderBlockSync(canvas: HTMLCanvasElement, block: Block): void {
+        if (!this.context.document) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const ds = this.getBlockDisplaySettings(block);
+        const isDark = this.context.styleManager.isDarkTheme();
+        const bgColor = !ds.useColor
+            ? (getComputedStyle(document.body).getPropertyValue('--background-primary').trim()
+                || (isDark ? '#1a1a1a' : '#ffffff'))
+            : (ds.backgroundColor ?? '#ffffff');
+
+        // Frischen Cache synchron aufbauen
+        const cache = document.createElement('canvas');
+        cache.width = canvas.width;
+        cache.height = canvas.height;
+        this._strokeCache.set(block.id, cache);
+
+        this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
+
+        // Sofort auf den Canvas zeichnen
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(cache, 0, 0);
+
+        this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
+    }
 }

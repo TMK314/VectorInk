@@ -789,7 +789,7 @@ export class ToolbarManager {
                 ? {
                     useColor: block.displaySettings.useColor,
                     backgroundColor: block.displaySettings.backgroundColor,
-                    widthMultiplier: block.displaySettings.widthMultiplier,
+                    // widthMultiplier bewusst NICHT hier — das ist Zoom, keine Stroke-Eigenschaft
                 }
                 : {};
             const newSettings = apply(block);

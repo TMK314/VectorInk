@@ -328,9 +328,22 @@ export class InkDocument {
 
     /** Fügt einen Stroke mit seiner originalen ID zurück ein (für Undo/Redo). */
     restoreStroke(stroke: Stroke): void {
-        if (!this.data.strokes.some(s => s.id === stroke.id)) {
-            this.data.strokes.push({ ...stroke, points: stroke.points.map(p => ({ ...p })) });
-            this.updateTimestamp();
-        }
+        if (this._strokeMap.has(stroke.id)) return;
+
+        const restored: Stroke = {
+            id: stroke.id,
+            points: stroke.points.map(p => ({ ...p })),
+            bezierCurves: stroke.bezierCurves?.map(c => ({
+                p0: { ...c.p0 },
+                p1: { ...c.p1 },
+                p2: { ...c.p2 },
+                p3: { ...c.p3 },
+            })),
+            style: { ...stroke.style }
+        };
+
+        this.data.strokes.push(restored);
+        this._strokeMap.set(restored.id, restored);   // ← FEHLTE
+        this.updateTimestamp();
     }
 }

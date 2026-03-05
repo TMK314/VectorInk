@@ -69,13 +69,38 @@ export class HistoryManager {
             case 'ERASE_STROKES': {
                 const block = this.context.blocks.find(b => b.id === action.blockId);
                 if (!block) break;
-                for (let i = 0; i < action.strokes.length; i++) {
-                    const stroke = action.strokes[i]!;
-                    doc.restoreStroke(stroke);
-                    const idx = action.blockStrokeIdIndices[i] ?? block.strokeIds.length;
+
+                const items = action.strokes.map((stroke, i) => ({
+                    stroke,
+                    idx: action.blockStrokeIdIndices[i] ?? block.strokeIds.length
+                })).sort((a, b) => a.idx - b.idx);
+
+                for (const { stroke, idx } of items) {
+                    doc.restoreStroke({
+                        ...stroke,
+                        points: stroke.points.map(p => ({ ...p })),
+                        bezierCurves: stroke.bezierCurves?.map(c => ({
+                            ...c,
+                            p0: { ...c.p0 },
+                            p1: { ...c.p1 },
+                            p2: { ...c.p2 },
+                            p3: { ...c.p3 }
+                        })),
+                        style: { ...stroke.style }
+                    });
                     block.strokeIds.splice(idx, 0, stroke.id);
                 }
-                this.invalidateAndRedraw(block);
+
+                // Cache hart ersetzen (wie DELETE)
+                const sentinel = document.createElement('canvas');
+                this.context.drawingManager['_strokeCache'].set(block.id, sentinel);
+
+                const canvas = this.context.blockManager.getCanvasForBlock(block.id);
+                if (canvas) {
+                    this.context.drawingManager.renderBlockSync(canvas, block);
+                }
+
+                this.context.strokeSelectionManager.selectedStrokes.clear();
                 break;
             }
             case 'DELETE_STROKES': {
@@ -89,11 +114,30 @@ export class HistoryManager {
                     if (!block) continue;
                     items.sort((a, b) => a.idx - b.idx);
                     for (const { stroke, idx } of items) {
-                        doc.restoreStroke(stroke);
+                        doc.restoreStroke({
+                            ...stroke,
+                            points: stroke.points.map(p => ({ ...p })),
+                            bezierCurves: stroke.bezierCurves?.map(c => ({
+                                ...c,
+                                p0: { ...c.p0 },
+                                p1: { ...c.p1 },
+                                p2: { ...c.p2 },
+                                p3: { ...c.p3 }
+                            })),
+                            style: { ...stroke.style }
+                        });
                         block.strokeIds.splice(idx, 0, stroke.id);
                     }
-                    this.invalidateAndRedraw(block);
+                    // Sentinel setzt den Cache, damit alle laufenden Idle-Callbacks ungültig werden
+                    const sentinel = document.createElement('canvas');
+                    this.context.drawingManager['_strokeCache'].set(block.id, sentinel);
+
+                    const canvas = this.context.blockManager.getCanvasForBlock(block.id);
+                    if (canvas) {
+                        this.context.drawingManager.renderBlockSync(canvas, block);
+                    }
                 }
+                this.context.strokeSelectionManager.selectedStrokes.clear();
                 break;
             }
             case 'PASTE_STROKES': {
@@ -138,7 +182,12 @@ export class HistoryManager {
                 for (const { blockId, oldSettings } of action.entries) {
                     const block = this.context.blocks.find(b => b.id === blockId);
                     if (!block) continue;
-                    if (!block.displaySettings) break;
+                    if (!block.displaySettings) {
+                        block.displaySettings = {
+                            grid: { enabled: false, type: 'grid' as const, size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5 },
+                            useColor: true, widthMultiplier: 1.0, backgroundColor: '#ffffff'
+                        };
+                    }
                     Object.assign(block.displaySettings, oldSettings);
                     this.invalidateAndRedraw(block);
                 }
@@ -165,13 +214,24 @@ export class HistoryManager {
             case 'ERASE_STROKES': {
                 const block = this.context.blocks.find(b => b.id === action.blockId);
                 if (!block) break;
+
                 for (const stroke of action.strokes) {
                     doc.removeStroke(stroke.id);
                     block.strokeIds = block.strokeIds.filter(id => id !== stroke.id);
                 }
-                this.invalidateAndRedraw(block);
+
+                const sentinel = document.createElement('canvas');
+                this.context.drawingManager['_strokeCache'].set(block.id, sentinel);
+
+                const canvas = this.context.blockManager.getCanvasForBlock(block.id);
+                if (canvas) {
+                    this.context.drawingManager.renderBlockSync(canvas, block);
+                }
+
+                this.context.strokeSelectionManager.selectedStrokes.clear();
                 break;
             }
+
             case 'DELETE_STROKES': {
                 const blockIds = new Set(action.entries.map(e => e.blockId));
                 for (const blockId of blockIds) {
@@ -181,15 +241,35 @@ export class HistoryManager {
                         doc.removeStroke(stroke.id);
                         block.strokeIds = block.strokeIds.filter(id => id !== stroke.id);
                     }
-                    this.invalidateAndRedraw(block);
+                    // Alten Cache sofort ersetzen – laufende Idle-Callbacks sehen einen anderen
+                    // capturedCache und zeichnen nicht mehr auf den Canvas.
+                    const sentinel = document.createElement('canvas');
+                    this.context.drawingManager['_strokeCache'].set(block.id, sentinel);
+
+                    const canvas = this.context.blockManager.getCanvasForBlock(block.id);
+                    if (canvas) {
+                        this.context.drawingManager.renderBlockSync(canvas, block);
+                    }
                 }
+                this.context.strokeSelectionManager.selectedStrokes.clear();
                 break;
             }
             case 'PASTE_STROKES': {
                 const block = this.context.blocks.find(b => b.id === action.blockId);
                 if (!block) break;
                 for (const stroke of action.strokes) {
-                    doc.restoreStroke(stroke);
+                    doc.restoreStroke({
+                        ...stroke,
+                        points: stroke.points.map(p => ({ ...p })),
+                        bezierCurves: stroke.bezierCurves?.map(c => ({
+                            ...c,
+                            p0: { ...c.p0 },
+                            p1: { ...c.p1 },
+                            p2: { ...c.p2 },
+                            p3: { ...c.p3 }
+                        })),
+                        style: { ...stroke.style }
+                    });
                     block.strokeIds.push(stroke.id);
                 }
                 this.invalidateAndRedraw(block);
@@ -227,7 +307,12 @@ export class HistoryManager {
                 for (const { blockId, newSettings } of action.entries) {
                     const block = this.context.blocks.find(b => b.id === blockId);
                     if (!block) continue;
-                    if (!block.displaySettings) break;
+                    if (!block.displaySettings) {
+                        block.displaySettings = {
+                            grid: { enabled: false, type: 'grid' as const, size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5 },
+                            useColor: true, widthMultiplier: 1.0, backgroundColor: '#ffffff'
+                        };
+                    }
                     Object.assign(block.displaySettings, newSettings);
                     this.invalidateAndRedraw(block);
                 }
@@ -241,7 +326,9 @@ export class HistoryManager {
     private invalidateAndRedraw(block: Block): void {
         this.context.drawingManager.invalidateBlockCache(block.id);
         const canvas = this.context.blockManager.getCanvasForBlock(block.id);
-        if (canvas) this.context.drawingManager.drawBlockStrokes(canvas, block);
+        if (canvas) {
+            this.context.drawingManager.renderBlockSync(canvas, block);
+        }
     }
 
     private updateButtonStates(): void {
