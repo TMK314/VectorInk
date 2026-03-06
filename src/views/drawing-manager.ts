@@ -39,7 +39,6 @@ export class DrawingManager {
     private _currentDrawStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle> | null = null;
 
     public _currentErasedStrokes: Array<{ stroke: Stroke; blockStrokeIdIndex: number }> = [];
-    private _eraseSessionOriginalIds: Map<string, number> = new Map();
 
     constructor(context: InkView) {
         this.context = context;
@@ -58,6 +57,10 @@ export class DrawingManager {
         let dragStartPoint: Point | null = null;
         let originalStrokePositions = new Map<string, Point[]>();
         let originalStrokeData = new Map<string, { points: Point[], bezierCurves?: CubicBezier[] }>();
+
+        // Gecachte BoundingRect & RAF-Flag für flüssiges Selektionsrechteck
+        let cachedCanvasRect: DOMRect = canvas.getBoundingClientRect();
+        let selectionRafPending = false;
 
         let lastKnownPressure = 0.5;
 
@@ -230,9 +233,10 @@ export class DrawingManager {
 
             if (this.currentStroke.length === 1) {
                 const p = this.currentStroke[0]!;
+                const dotStyle = this._currentDrawStyle ?? this.currentPenStyle;
                 const dot: Stroke = {
                     id: crypto.randomUUID(),
-                    points: [p, { x: p.x + 0.1, y: p.y }],
+                    points: [p, { x: p.x + 0.001, y: p.y }], // Winziger Offset → _isDotStroke erkennt ihn
                     bezierCurves: [],
                     style: { ...this.currentPenStyle },
                 };
@@ -241,8 +245,30 @@ export class DrawingManager {
                 this.updateBlockBoundingBox(block, dot.points);
                 this.currentStroke = [];
                 lastPoint = null;
-                console.log(`Stroke: ${originalCount} → 2 points (dot)`);
+
+                // Direkt als Kreis auf Canvas zeichnen (sofortiges visuelles Feedback)
+                const dotCtx = canvas.getContext('2d');
+                if (dotCtx) {
+                    dotCtx.beginPath();
+                    dotCtx.arc(p.x, p.y, Math.max(dotStyle.width / 2, 0.5), 0, Math.PI * 2);
+                    dotCtx.fillStyle = dotStyle.color;
+                    dotCtx.globalAlpha = dotStyle.opacity ?? 1;
+                    dotCtx.fill();
+                    dotCtx.globalAlpha = 1;
+                }
+
                 this._appendStrokeToCache(block, added);
+
+                // History – damit Undo auch Punkte rückgängig macht
+                this.context.historyManager?.push({
+                    type: 'ADD_STROKE',
+                    blockId: block.id,  // block = der Block, dem der Stroke tatsächlich hinzugefügt wurde
+                    stroke: {
+                        ...added,
+                        points: added.points.map(q => ({ ...q })),
+                        bezierCurves: []
+                    }
+                });
                 return;
             }
 
@@ -268,19 +294,17 @@ export class DrawingManager {
             // Cache NICHT invalidieren — neuen Stroke inkrementell draufzeichnen
             this._appendStrokeToCache(block, addedStroke);
 
-            // History
-            const histBlock = this.context.blocks[blockIndex];
-            if (histBlock) {
-                this.context.historyManager?.push({
-                    type: 'ADD_STROKE',
-                    blockId: histBlock.id,
-                    stroke: {
-                        ...addedStroke,
-                        points: addedStroke.points.map(p => ({ ...p })),
-                        bezierCurves: addedStroke.bezierCurves?.map(c => ({ ...c, p0: { ...c.p0 }, p1: { ...c.p1 }, p2: { ...c.p2 }, p3: { ...c.p3 } }))
-                    }
-                });
-            }
+            // History – blockId muss GENAU dem Block entsprechen, dem der Stroke hinzugefügt wurde.
+            // (block = this.context.blocks[currentBlockIndex], nicht blockIndex aus dem Closure)
+            this.context.historyManager?.push({
+                type: 'ADD_STROKE',
+                blockId: block.id,
+                stroke: {
+                    ...addedStroke,
+                    points: addedStroke.points.map(p => ({ ...p })),
+                    bezierCurves: addedStroke.bezierCurves?.map(c => ({ ...c, p0: { ...c.p0 }, p1: { ...c.p1 }, p2: { ...c.p2 }, p3: { ...c.p3 } }))
+                }
+            });
         };
 
         const startErasing = (point: Point) => {
@@ -288,16 +312,10 @@ export class DrawingManager {
 
             this._currentErasedStrokes = [];
 
-            // Original-Reihenfolge sichern – Indizes bleiben korrekt, auch wenn
-            // während der Session mehrere eraseAtPoint-Aufrufe Strokes entfernen.
-            const block = this.context.blocks[blockIndex];
-            this._eraseSessionOriginalIds = new Map(
-                (block?.strokeIds ?? []).map((id, i) => [id, i] as [string, number])
-            );
-
             this.isErasing = true;
             lastErasePoint = point;
 
+            const block = this.context.blocks[blockIndex];
             if (block) this._buildSpatialIndex(block);
 
             this.eraseAtPoint(canvas, blockIndex, point);
@@ -403,14 +421,14 @@ export class DrawingManager {
                 selectionBox = document.createElement('div');
                 selectionBox.className = 'stroke-selection-box';
                 selectionBox.style.position = 'absolute';
-                const colors = this.getSelectionColors();
                 this.applySelectionBoxTheme(selectionBox);
                 selectionBox.style.pointerEvents = 'none';
                 selectionBox.style.zIndex = '1000';
 
-                const canvasRect = canvas.getBoundingClientRect();
-                selectionBox.style.left = `${canvasRect.left}px`;
-                selectionBox.style.top = `${canvasRect.top}px`;
+                // BoundingRect einmalig cachen – ändert sich nicht während der Selektion
+                cachedCanvasRect = canvas.getBoundingClientRect();
+                selectionBox.style.left = `${cachedCanvasRect.left}px`;
+                selectionBox.style.top = `${cachedCanvasRect.top}px`;
                 selectionBox.style.width = '0';
                 selectionBox.style.height = '0';
 
@@ -428,14 +446,25 @@ export class DrawingManager {
             const width = Math.abs(point.x - selectionRectStart.x);
             const height = Math.abs(point.y - selectionRectStart.y);
 
-            const canvasRect = canvas.getBoundingClientRect();
-            const scaleX = canvasRect.width / canvas.width;
-            const scaleY = canvasRect.height / canvas.height;
+            // Kein getBoundingClientRect() pro Event – cachedCanvasRect aus startSelection verwenden.
+            // DPR-Skala: canvas.style.width = logischePx, canvas.width = physischePx
+            const dpr = window.devicePixelRatio || 1;
+            const scaleX = 1 / dpr;
+            const scaleY = 1 / dpr;
 
-            selectionBox.style.left = `${canvasRect.left + x * scaleX}px`;
-            selectionBox.style.top = `${canvasRect.top + y * scaleY}px`;
-            selectionBox.style.width = `${width * scaleX}px`;
-            selectionBox.style.height = `${height * scaleY}px`;
+            if (!selectionRafPending) {
+                selectionRafPending = true;
+                // Nur einmal pro Frame die DOM-Styles setzen (verhindert Layout-Thrashing)
+                const snapX = x, snapY = y, snapW = width, snapH = height;
+                requestAnimationFrame(() => {
+                    selectionRafPending = false;
+                    if (!selectionBox) return;
+                    selectionBox.style.left = `${cachedCanvasRect.left + snapX * scaleX}px`;
+                    selectionBox.style.top = `${cachedCanvasRect.top + snapY * scaleY}px`;
+                    selectionBox.style.width = `${snapW * scaleX}px`;
+                    selectionBox.style.height = `${snapH * scaleY}px`;
+                });
+            }
         };
 
         const endSelectionRect = (endPoint: Point, addToSelection: boolean) => {
@@ -549,33 +578,28 @@ export class DrawingManager {
                 }
             });
 
-            // Tatsächliche Verschiebung ermitteln
+            // History für Move
             const movedIds = [...this.context.strokeSelectionManager.selectedStrokes];
-            let actualDx = 0, actualDy = 0;
             if (movedIds.length > 0 && originalStrokeData.size > 0) {
                 const firstId = movedIds[0];
                 const origData = firstId ? originalStrokeData.get(firstId) : undefined;
                 const currentStroke = firstId ? this.context.document?.getStroke(firstId) : undefined;
                 if (origData && currentStroke && origData.points[0] && currentStroke.points[0]) {
-                    actualDx = currentStroke.points[0].x - origData.points[0].x;
-                    actualDy = currentStroke.points[0].y - origData.points[0].y;
+                    const dx = currentStroke.points[0].x - origData.points[0].x;
+                    const dy = currentStroke.points[0].y - origData.points[0].y;
+                    if (dx !== 0 || dy !== 0) {
+                        const block = this.context.blocks[blockIndex];
+                        if (block) {
+                            this.context.historyManager?.push({
+                                type: 'MOVE_STROKES',
+                                blockId: block.id,
+                                strokeIds: movedIds,
+                                dx,
+                                dy
+                            });
+                        }
+                    }
                 }
-            }
-
-            // History + Speichern nur bei echter Bewegung
-            if (actualDx !== 0 || actualDy !== 0) {
-                const block = this.context.blocks[blockIndex];
-                if (block) {
-                    this.context.historyManager?.push({
-                        type: 'MOVE_STROKES',
-                        blockId: block.id,
-                        strokeIds: movedIds,
-                        dx: actualDx,
-                        dy: actualDy
-                    });
-                }
-                this.context.saveDocument();
-                new Notice(`Moved ${this.context.strokeSelectionManager.selectedStrokes.size} stroke(s)`);
             }
 
             // Cache invalidieren, damit Strokes bei nächstem Render an neuer Position gezeichnet werden
@@ -592,6 +616,9 @@ export class DrawingManager {
             if (block) {
                 this.adjustBlockSize(block.id);
             }
+
+            this.context.saveDocument();
+            new Notice(`Moved ${this.context.strokeSelectionManager.selectedStrokes.size} stroke(s)`);
         };
 
         const redrawCanvasWithSelection = () => {
@@ -710,8 +737,11 @@ export class DrawingManager {
                 this._perf.rafExecuted++;
                 requestAnimationFrame(() => {
                     this._rafPending = false;
-                    if (this._rafCanvas && this._rafBlock)
+                    // Nicht rendern wenn aktiv gezeichnet wird — draw() schreibt direkt auf den Canvas.
+                    // Der nächste Render nach stopDrawing zeigt den korrekten Zustand.
+                    if (this._rafCanvas && this._rafBlock && !this.isDrawing) {
                         this._drawBlockStrokesImmediate(this._rafCanvas, this._rafBlock);
+                    }
                     this._perf.report();
                 });
             } else {
@@ -749,18 +779,30 @@ export class DrawingManager {
             this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
         }
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // drawImage ohne explizite dw/dh: logischer Cache auf skaliertem ctx
-        // → Bild füllt exakt die logische Zeichenfläche
+        // Expliziter Transform: Verhindert Fehler wenn canvas.width-Zuweisung den Scale zwischendurch zurückgesetzt hat
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
         if (cache) ctx.drawImage(cache, 0, 0);
 
-        if (this.isDrawing && this.currentStroke.length >= 2) {
+        if (this.isDrawing && this.currentStroke.length >= 1) {
             const currentBlock = this.context.blocks[this.context.currentBlockIndex];
             if (currentBlock?.id === block.id) {
                 const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
                     block.type, this.currentPenStyle
                 );
-                this.drawLinearStroke(ctx, this.currentStroke, displayStyle);
+                if (this.currentStroke.length === 1) {
+                    // Ersten Punkt sofort als Kreis anzeigen
+                    const p = this.currentStroke[0]!;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, Math.max(displayStyle.width / 2, 0.5), 0, Math.PI * 2);
+                    ctx.fillStyle = displayStyle.color;
+                    ctx.globalAlpha = displayStyle.opacity ?? 1;
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                } else {
+                    this.drawLinearStroke(ctx, this.currentStroke, displayStyle);
+                }
             }
         }
 
@@ -818,12 +860,45 @@ export class DrawingManager {
             const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
                 block.type, stroke.style, ds.useColor, ds.widthMultiplier
             );
-            if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
-                this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
-            } else if (stroke.points.length >= 2) {
-                this.drawLinearStroke(ctx, stroke.points, displayStyle);
-            }
+            this._drawStrokeOnContext(ctx, stroke, displayStyle);
         }
+    }
+
+    /** Einheitliche Render-Methode für einen Stroke auf einem beliebigen 2D-Context */
+    private _drawStrokeOnContext(
+        ctx: CanvasRenderingContext2D,
+        stroke: Stroke,
+        displayStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle>
+    ): void {
+        if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
+            this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
+        } else if (this._isDotStroke(stroke)) {
+            this._drawDotOnContext(ctx, stroke.points[0]!, displayStyle);
+        } else if (stroke.points.length >= 2) {
+            this.drawLinearStroke(ctx, stroke.points, displayStyle);
+        }
+    }
+
+    /** Erkennt einen Ein-Punkt-Stroke (Offset < 0.5 px) */
+    private _isDotStroke(stroke: Stroke): boolean {
+        if (stroke.points.length !== 2) return false;
+        const dx = stroke.points[1]!.x - stroke.points[0]!.x;
+        const dy = stroke.points[1]!.y - stroke.points[0]!.y;
+        return Math.hypot(dx, dy) < 0.5;
+    }
+
+    /** Zeichnet einen gefüllten Kreis für Ein-Punkt-Strokes */
+    private _drawDotOnContext(
+        ctx: CanvasRenderingContext2D,
+        p: Point,
+        displayStyle: ReturnType<typeof this.context.styleManager.getCalculatedStrokeStyle>
+    ): void {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(displayStyle.width / 2, 0.5), 0, Math.PI * 2);
+        ctx.fillStyle = displayStyle.color;
+        ctx.globalAlpha = displayStyle.opacity ?? 1;
+        ctx.fill();
+        ctx.globalAlpha = 1;
     }
 
     public invalidateBlockCache(blockId: string): void {
@@ -842,11 +917,7 @@ export class DrawingManager {
             block.type, stroke.style, ds.useColor, ds.widthMultiplier
         );
 
-        if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
-            this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
-        } else if (stroke.points.length >= 2) {
-            this.drawLinearStroke(ctx, stroke.points, displayStyle);
-        }
+        this._drawStrokeOnContext(ctx, stroke, displayStyle);
     }
 
     private updateBlockBoundingBox(block: Block, points: Point[]): void {
@@ -1170,11 +1241,7 @@ export class DrawingManager {
             const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
                 block.type, stroke.style, ds.useColor, ds.widthMultiplier
             );
-            if (stroke.bezierCurves && stroke.bezierCurves.length > 0) {
-                this.drawBezierStroke(ctx, stroke.bezierCurves, displayStyle);
-            } else if (stroke.points.length >= 2) {
-                this.drawLinearStroke(ctx, stroke.points, displayStyle);
-            }
+            this._drawStrokeOnContext(ctx, stroke, displayStyle);
         }
 
         ctx.restore();
@@ -1235,25 +1302,14 @@ export class DrawingManager {
             if (stroke) this._unindexStroke(strokeId, stroke.points);
         }
 
-        // Für History: Strokes mit Original-Index sichern (Reihenfolge aus Session-Start)
+        // Für History: Strokes mit Originalindex sichern
         strokeIdsToRemove.forEach(id => {
-            const originalIdx = this._eraseSessionOriginalIds.has(id)
-                ? this._eraseSessionOriginalIds.get(id)!
-                : block.strokeIds.indexOf(id);
+            const idx = block.strokeIds.indexOf(id);
             const stroke = this.context.document?.getStroke(id);
-            if (stroke && originalIdx >= 0) {
+            if (stroke && idx >= 0) {
                 this._currentErasedStrokes.push({
-                    stroke: {
-                        ...stroke,
-                        points: stroke.points.map(p => ({ ...p })),
-                        bezierCurves: stroke.bezierCurves?.map(c => ({
-                            ...c,
-                            p0: { ...c.p0 }, p1: { ...c.p1 },
-                            p2: { ...c.p2 }, p3: { ...c.p3 }
-                        })),
-                        style: { ...stroke.style }
-                    },
-                    blockStrokeIdIndex: originalIdx
+                    stroke: { ...stroke, points: stroke.points.map(p => ({ ...p })), bezierCurves: stroke.bezierCurves?.map(c => ({ ...c })) },
+                    blockStrokeIdIndex: idx
                 });
             }
         });
@@ -1656,7 +1712,7 @@ export class DrawingManager {
                 || (isDark ? '#1a1a1a' : '#ffffff'))
             : (ds.backgroundColor ?? '#ffffff');
 
-        // Frischen Cache synchron aufbauen — logische Größe (konsistent mit _drawBlockStrokesImmediate)
+        // Cache in LOGISCHEN Pixeln – konsistent mit _drawBlockStrokesImmediate
         const cache = document.createElement('canvas');
         cache.width = block.bbox.width;
         cache.height = block.bbox.height;
@@ -1664,33 +1720,13 @@ export class DrawingManager {
 
         this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
 
-        // Sofort auf den Canvas zeichnen
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Expliziter Transform: unabhängig davon ob canvas.width zwischendurch zurückgesetzt wurde
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
         ctx.drawImage(cache, 0, 0);
 
         this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
-    }
-
-    private getSelectionColors(): { border: string; background: string } {
-        const styles = getComputedStyle(document.body);
-
-        const accent = styles.getPropertyValue('--interactive-accent').trim() || '#7c3aed';
-
-        // Hex → RGB umrechnen
-        const hex = accent.replace('#', '');
-        const bigint = parseInt(hex.length === 3
-            ? hex.split('').map(c => c + c).join('')
-            : hex, 16);
-
-        const r = (bigint >> 16) & 255;
-        const g = (bigint >> 8) & 255;
-        const b = bigint & 255;
-        console.log("Border color:", accent, "→ RGB:", r, g, b);
-
-        return {
-            border: `2px dashed ${accent}`,
-            background: `rgba(${r}, ${g}, ${b}, 0.15)`
-        };
     }
 
     private applySelectionBoxTheme(selectionBox: HTMLElement): void {

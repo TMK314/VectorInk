@@ -191,6 +191,8 @@ export class BlockManager {
                 const isMultiSelectKey = isMac ? e.metaKey : e.ctrlKey;
                 const isRangeSelectKey = e.shiftKey;
 
+                const prevPrimary = this.context.currentBlockIndex;
+
                 if (isMultiSelectKey) {
                     if (this.selectedBlockIndices.has(index)) {
                         this.selectedBlockIndices.delete(index);
@@ -216,18 +218,27 @@ export class BlockManager {
                     this.context.currentBlockIndex = index;
                 }
 
-                // Nur Stile aktualisieren — KEIN renderBlocks()
-                this._updateBlockSelectionStyles();
+                // Vollständiges Re-Render wenn sich der primäre Block ändert
+                // (Header/Buttons werden in createBlockElement erzeugt und müssen neu gebaut werden)
+                if (this.context.currentBlockIndex !== prevPrimary) {
+                    this.renderBlocks();
+                } else {
+                    this._updateBlockSelectionStyles();
+                }
                 this.context.toolbarManager?.syncToolbarToCurrentBlock();
             }
         };
 
         blockEl.ondblclick = (e) => {
+            const prevPrimary = this.context.currentBlockIndex;
             this.selectedBlockIndices.clear();
             this.selectedBlockIndices.add(index);
             this.context.currentBlockIndex = index;
-            // Nur Stile aktualisieren — KEIN renderBlocks()
-            this._updateBlockSelectionStyles();
+            if (this.context.currentBlockIndex !== prevPrimary) {
+                this.renderBlocks();
+            } else {
+                this._updateBlockSelectionStyles();
+            }
             this.context.toolbarManager?.syncToolbarToCurrentBlock();
         };
 

@@ -61,9 +61,20 @@ export class HistoryManager {
             case 'ADD_STROKE': {
                 const block = this.context.blocks.find(b => b.id === action.blockId);
                 if (!block) break;
+
                 doc.removeStroke(action.stroke.id);
                 block.strokeIds = block.strokeIds.filter(id => id !== action.stroke.id);
-                this.invalidateAndRedraw(block);
+
+                // Cache invalidieren
+                const sentinel = document.createElement('canvas');
+                this.context.drawingManager['_strokeCache'].set(block.id, sentinel);
+
+                const canvas = this.context.blockManager.getCanvasForBlock(block.id);
+                if (canvas) {
+                    this.context.drawingManager.renderBlockSync(canvas, block);
+                }
+
+                this.context.strokeSelectionManager.selectedStrokes.clear();
                 break;
             }
             case 'ERASE_STROKES': {
@@ -334,4 +345,6 @@ export class HistoryManager {
     private updateButtonStates(): void {
         this.context.toolbarManager.updateUndoRedoButtons(this.canUndo(), this.canRedo());
     }
+
+
 }

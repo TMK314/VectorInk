@@ -263,11 +263,13 @@ export class StrokeSelectionManager {
         const currentBlock = this.context.blocks[this.context.currentBlockIndex];
 
         if (currentBlock) {
-            // History-Einträge VOR dem Löschen sammeln
+
             const entries: Array<{ blockId: string; stroke: Stroke; blockStrokeIdIndex: number }> = [];
+
             this.selectedStrokes.forEach(strokeId => {
                 const idx = currentBlock.strokeIds.indexOf(strokeId);
                 const stroke = this.context.document?.getStroke(strokeId);
+
                 if (stroke && idx >= 0) {
                     entries.push({
                         blockId: currentBlock.id,
@@ -276,8 +278,10 @@ export class StrokeSelectionManager {
                             points: stroke.points.map(p => ({ ...p })),
                             bezierCurves: stroke.bezierCurves?.map(c => ({
                                 ...c,
-                                p0: { ...c.p0 }, p1: { ...c.p1 },
-                                p2: { ...c.p2 }, p3: { ...c.p3 }
+                                p0: { ...c.p0 },
+                                p1: { ...c.p1 },
+                                p2: { ...c.p2 },
+                                p3: { ...c.p3 }
                             })),
                             style: { ...stroke.style }
                         },
@@ -295,45 +299,53 @@ export class StrokeSelectionManager {
             if (entries.length > 0) {
                 this.context.historyManager?.push({ type: 'DELETE_STROKES', entries });
             }
+
+            // Cache invalidieren
+            const sentinel = document.createElement('canvas');
+            this.context.drawingManager['_strokeCache'].set(currentBlock.id, sentinel);
+
+            const canvas = this.context.blockManager.getCanvasForBlock(currentBlock.id);
+            if (canvas) {
+                this.context.drawingManager.renderBlockSync(canvas, currentBlock);
+            }
         }
 
         this.selectedStrokes.clear();
-        this.context.blockManager.renderBlocks();
         new Notice(`Deleted ${count} stroke(s)`);
     }
 
     public applyStyleToSelectedStrokes(style: Partial<StrokeStyle>): void {
-    if (!this.context.document || this.selectedStrokes.size === 0) return;
+        if (!this.context.document || this.selectedStrokes.size === 0) return;
 
-    const currentBlock = this.context.blocks[this.context.currentBlockIndex];
-    const historyEntries: Array<{ strokeId: string; oldStyle: StrokeStyle; newStyle: StrokeStyle }> = [];
+        const currentBlock = this.context.blocks[this.context.currentBlockIndex];
+        const historyEntries: Array<{ strokeId: string; oldStyle: StrokeStyle; newStyle: StrokeStyle }> = [];
 
-    this.selectedStrokes.forEach(strokeId => {
-        const stroke = this.context.document?.getStroke(strokeId);
-        if (stroke) {
-            const oldStyle: StrokeStyle = { ...stroke.style };
-            const newStyle: StrokeStyle = { ...stroke.style, ...style };
-            historyEntries.push({ strokeId, oldStyle, newStyle });
-            this.context.document?.updateStroke(strokeId, { style: newStyle });
-        }
-    });
-
-    if (historyEntries.length > 0 && currentBlock) {
-        this.context.historyManager?.push({
-            type: 'RESTYLE_STROKES',
-            blockId: currentBlock.id,
-            entries: historyEntries
+        this.selectedStrokes.forEach(strokeId => {
+            const stroke = this.context.document?.getStroke(strokeId);
+            if (stroke) {
+                const oldStyle: StrokeStyle = { ...stroke.style };
+                const newStyle: StrokeStyle = { ...stroke.style, ...style };
+                historyEntries.push({ strokeId, oldStyle, newStyle });
+                this.context.document?.updateStroke(strokeId, { style: newStyle });
+            }
         });
-        // Cache invalidieren und sofort synchron neu rendern, damit die neuen Styles sichtbar werden
-        this.context.drawingManager.invalidateBlockCache(currentBlock.id);
-        const canvas = this.context.blockManager.getCanvasForBlock(currentBlock.id);
-        if (canvas) {
-            this.context.drawingManager.renderBlockSync(canvas, currentBlock);
-        }
-    }
 
-    new Notice(`Updated style for ${this.selectedStrokes.size} stroke(s)`);
-}
+        if (historyEntries.length > 0 && currentBlock) {
+            this.context.historyManager?.push({
+                type: 'RESTYLE_STROKES',
+                blockId: currentBlock.id,
+                entries: historyEntries
+            });
+            // Cache invalidieren und sofort synchron neu rendern, damit die neuen Styles sichtbar werden
+            this.context.drawingManager.invalidateBlockCache(currentBlock.id);
+            const canvas = this.context.blockManager.getCanvasForBlock(currentBlock.id);
+            if (canvas) {
+                this.context.drawingManager.renderBlockSync(canvas, currentBlock);
+            }
+        }
+
+        new Notice(`Updated style for ${this.selectedStrokes.size} stroke(s)`);
+    }
 
     public clearSelection(): void {
         this.selectedStrokes.clear();
