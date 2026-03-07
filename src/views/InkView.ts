@@ -174,7 +174,6 @@ export class InkView extends FileView {
                                     this.strokeSelectionManager.selectedStrokes.add(id);
                                 });
                                 this.blockManager.renderBlocks();
-                                new Notice(`Selected ${block.strokeIds.length} stroke(s)`);
                             }
                             e.preventDefault();
                             return;

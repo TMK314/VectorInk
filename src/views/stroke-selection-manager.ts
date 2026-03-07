@@ -1,6 +1,5 @@
 import { InkView } from './InkView';
 import { Stroke, Point, BoundingBox, StrokeStyle, Block } from '../types';
-import { Notice } from 'obsidian';
 
 export class StrokeSelectionManager {
     private context: InkView;
@@ -205,8 +204,6 @@ export class StrokeSelectionManager {
                 this.copiedStrokes.push(copiedStroke);
             }
         });
-
-        new Notice(`Copied ${this.copiedStrokes.length} stroke(s)`);
     }
 
     public pasteStrokes(blockIndex: number, offset: Point = { x: 10, y: 10 }): void {
@@ -252,7 +249,6 @@ export class StrokeSelectionManager {
             });
         }
 
-        new Notice(`Pasted ${this.copiedStrokes.length} stroke(s)`);
         this.context.blockManager.renderBlocks();
     }
 
@@ -311,7 +307,6 @@ export class StrokeSelectionManager {
         }
 
         this.selectedStrokes.clear();
-        new Notice(`Deleted ${count} stroke(s)`);
     }
 
     public applyStyleToSelectedStrokes(style: Partial<StrokeStyle>): void {
@@ -343,8 +338,6 @@ export class StrokeSelectionManager {
                 this.context.drawingManager.renderBlockSync(canvas, currentBlock);
             }
         }
-
-        new Notice(`Updated style for ${this.selectedStrokes.size} stroke(s)`);
     }
 
     public clearSelection(): void {

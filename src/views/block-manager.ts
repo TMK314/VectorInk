@@ -486,7 +486,6 @@ export class BlockManager {
                 }
 
                 this.renderBlocks();
-                new Notice('Block cleared');
             }
         }
     }
@@ -514,7 +513,6 @@ export class BlockManager {
             );
 
             this.renderBlocks();
-            new Notice('Block deleted');
         }
     }
 

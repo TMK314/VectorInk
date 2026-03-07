@@ -22,7 +22,7 @@ export class DrawingManager {
     // Drawing settings
     public widthMultiplier = 1.0; // Default-Wert
     public smoothing = 0.3;
-    public epsilon = 1.0;
+    public epsilon = 0.1;
 
     private _rafPending = false;
     private _rafCanvas: HTMLCanvasElement | null = null;
@@ -66,14 +66,16 @@ export class DrawingManager {
 
         const getPoint = (e: PointerEvent): Point => {
             const rect = canvas.getBoundingClientRect();
-            // Account for CSS zoom (Obsidian Ctrl+/-): canvas.offsetWidth is the CSS layout
-            // width (unscaled), rect.width is the visual width (scaled by zoom). Their ratio
-            // gives the inverse zoom factor so pointer coords map correctly to canvas space.
-            const scaleX = rect.width > 0 ? canvas.offsetWidth / rect.width : 1;
-            const scaleY = rect.height > 0 ? canvas.offsetHeight / rect.height : 1;
+            // canvas.style.width = block.bbox.width px (logische Pixel, unverändert)
+            // rect.width         = block.bbox.width × cssZoom  (visuelle Pixel)
+            // clientX/Y          = visuelle Viewport-Pixel
+            // → (clientX - rect.left) × (bbox / rect.width) normiert auf Zeichenkoordinaten
+            const block = this.context.blocks[blockIndex];
+            const bw = block?.bbox.width  ?? { value: parseFloat(canvas.style.width)  || rect.width };
+            const bh = block?.bbox.height ?? { value: parseFloat(canvas.style.height) || rect.height };
             return {
-                x: (e.clientX - rect.left) * scaleX,
-                y: (e.clientY - rect.top) * scaleY,
+                x: (e.clientX - rect.left) * (bw / rect.width),
+                y: (e.clientY - rect.top)  * (bh / rect.height),
             };
         };
 
@@ -157,12 +159,8 @@ export class DrawingManager {
         const getCanvasCursor = (point: Point): string => {
             if (this.currentTool === 'selection') {
                 const strokeId = getStrokeAtPoint(point);
-                if (strokeId && this.context.strokeSelectionManager.selectedStrokes.has(strokeId)) {
-                    return 'move';
-                }
-                if (isPointOnSelectionBorder(point)) {
-                    return 'move';
-                }
+                if (strokeId && this.context.strokeSelectionManager.selectedStrokes.has(strokeId)) return 'move';
+                if (isPointOnSelectionBorder(point)) return 'move';
                 return 'crosshair';
             }
             return this._getCursorForTool();
@@ -619,7 +617,6 @@ export class DrawingManager {
             }
 
             this.context.saveDocument();
-            new Notice(`Moved ${this.context.strokeSelectionManager.selectedStrokes.size} stroke(s)`);
         };
 
         const redrawCanvasWithSelection = () => {
@@ -695,7 +692,6 @@ export class DrawingManager {
         };
 
         const handlePointerLeave = () => {
-            // Behalte den werkzeug-passenden Cursor (nicht auf 'default' zurücksetzen)
             canvas.style.cursor = this._getCursorForTool();
             if (isMouseDown) handlePointerUp(new PointerEvent('pointerup'));
             if (isSelectingRect && selectionBox) {
@@ -709,8 +705,8 @@ export class DrawingManager {
         };
 
         // Pointer Events (vereinheitlicht Mouse + Touch + Stylus)
-        canvas.style.touchAction = 'none'; // verhindert Browser-Scroll-Interferenz
-        canvas.style.cursor = this._getCursorForTool(); // Cursor sofort beim Aufbau setzen
+        canvas.style.touchAction = 'none';
+        canvas.style.cursor = this._getCursorForTool(); // sofort beim Aufbau
         canvas.addEventListener('pointerdown', handlePointerDown);
         canvas.addEventListener('pointermove', handlePointerMove);
         canvas.addEventListener('pointerup', handlePointerUp);
@@ -1500,62 +1496,38 @@ export class DrawingManager {
 
     public setTool(tool: 'pen' | 'eraser' | 'selection'): void {
         if (this.currentTool === tool) return;
-
         this.currentTool = tool;
 
-        if (tool !== 'pen') {
-            this.isDrawing = false;
-            this.currentStroke = [];
-        }
-        if (tool !== 'eraser') {
-            this.isErasing = false;
-        }
-
-        // Sobald wir das Selection-Tool verlassen → Auswahl aufheben
+        if (tool !== 'pen')       { this.isDrawing = false; this.currentStroke = []; }
+        if (tool !== 'eraser')    { this.isErasing = false; }
         if (tool !== 'selection') {
             this.context.strokeSelectionManager.selectedStrokes.clear();
             this.dragOffset = { x: 0, y: 0 };
-
-            // Canvas neu zeichnen, damit Selection-Overlay verschwindet
             this.context.drawingManager.redrawAllBlocks();
         }
 
-        // Alle Canvas-Cursor sofort auf das neue Werkzeug aktualisieren
         this._updateAllCanvasCursors();
+        this.context.toolbarManager?.syncToolbarToTool(tool);
     }
 
-    /**
-     * Gibt den passenden CSS-Cursor-String für das aktuelle Werkzeug zurück.
-     * Pen → Fadenkreuz, Eraser → SVG-Kreis, Selection → crosshair.
-     */
+    // ── Cursor-Hilfsmethoden ─────────────────────────────────────────────
+
+    /** CSS-Cursor für das aktuelle Werkzeug. public → nutzbar in InkEmbedRenderer. */
     public _getCursorForTool(): string {
-        if (this.currentTool === 'eraser') {
-            return this._buildEraserCursor();
-        }
-        // pen & selection: Fadenkreuz
-        return 'crosshair';
+        if (this.currentTool === 'eraser') return this._buildEraserCursor();
+        return 'crosshair'; // pen & selection
     }
 
-    /**
-     * Erzeugt einen SVG-basierten Kreis-Cursor für den Radierer.
-     * Die Größe entspricht annähernd dem Radiererradius (15 logische Pixel).
-     */
     private _buildEraserCursor(): string {
-        const r = 12; // ~Radiererradius in CSS-Pixeln
-        const size = r * 2 + 6;
-        const cx = r + 3;
-        const cy = r + 3;
+        const r = 12, size = r * 2 + 6, cx = r + 3, cy = r + 3;
         const svg =
             `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(255,255,255,0.15)" ` +
-            `stroke="#444" stroke-width="1.5"/>` +
-            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" ` +
-            `stroke="rgba(255,255,255,0.6)" stroke-width="0.75"/>` +
+            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(255,255,255,0.1)" stroke="#666" stroke-width="1.5"/>` +
+            `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>` +
             `</svg>`;
         return `url('data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}') ${cx} ${cy}, cell`;
     }
 
-    /** Setzt den Cursor aller Canvas-Elemente im Block-Container auf das aktuelle Werkzeug. */
     private _updateAllCanvasCursors(): void {
         if (!this.context.blocksContainer) return;
         const cursor = this._getCursorForTool();
