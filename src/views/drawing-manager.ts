@@ -40,6 +40,24 @@ export class DrawingManager {
 
     public _currentErasedStrokes: Array<{ stroke: Stroke; blockStrokeIdIndex: number }> = [];
 
+    /**
+     * DPR-Skalierung für den Stroke-Cache (DPR, kein viewScale).
+     * Der Cache ist viewScale-unabhängig — der viewScale wird erst beim Zeichnen
+     * auf das Haupt-Canvas via setTransform(effectiveDpr) angewendet.
+     */
+    private get _cacheDpr(): number {
+        return window.devicePixelRatio || 1;
+    }
+
+    /**
+     * Effektiver DPR für das Haupt-Canvas: DPR × viewScale.
+     * Das Canvas-Backing ist canvas.width = bbox × effectiveDpr,
+     * CSS zoom handhabt die visuelle Darstellung.
+     */
+    private get _effectiveDpr(): number {
+        return (window.devicePixelRatio || 1) * (this.context.viewScale || 1);
+    }
+
     constructor(context: InkView) {
         this.context = context;
     }
@@ -59,7 +77,6 @@ export class DrawingManager {
         let originalStrokeData = new Map<string, { points: Point[], bezierCurves?: CubicBezier[] }>();
 
         // Gecachte BoundingRect & RAF-Flag für flüssiges Selektionsrechteck
-        let cachedCanvasRect: DOMRect = canvas.getBoundingClientRect();
         let selectionRafPending = false;
 
         let lastKnownPressure = 0.5;
@@ -416,18 +433,15 @@ export class DrawingManager {
                 isSelectingRect = true;
                 selectionRectStart = point;
 
-                // Create selection rectangle element
+                // Selektionsrechteck: position:fixed — bleibt im Viewport verankert
+                // unabhängig vom Scroll-Offset. Koordinaten werden pro Frame aus
+                // canvas.getBoundingClientRect() neu berechnet.
                 selectionBox = document.createElement('div');
                 selectionBox.className = 'stroke-selection-box';
-                selectionBox.style.position = 'absolute';
+                selectionBox.style.position = 'fixed';
                 this.applySelectionBoxTheme(selectionBox);
                 selectionBox.style.pointerEvents = 'none';
                 selectionBox.style.zIndex = '1000';
-
-                // BoundingRect einmalig cachen – ändert sich nicht während der Selektion
-                cachedCanvasRect = canvas.getBoundingClientRect();
-                selectionBox.style.left = `${cachedCanvasRect.left}px`;
-                selectionBox.style.top = `${cachedCanvasRect.top}px`;
                 selectionBox.style.width = '0';
                 selectionBox.style.height = '0';
 
@@ -445,22 +459,26 @@ export class DrawingManager {
             const width = Math.abs(point.x - selectionRectStart.x);
             const height = Math.abs(point.y - selectionRectStart.y);
 
-            // Kein getBoundingClientRect() pro Event – cachedCanvasRect aus startSelection verwenden.
-            // DPR-Skala: canvas.style.width = logischePx, canvas.width = physischePx
-            const dpr = window.devicePixelRatio || 1;
-            const scaleX = 1 / dpr;
-            const scaleY = 1 / dpr;
-
             if (!selectionRafPending) {
                 selectionRafPending = true;
-                // Nur einmal pro Frame die DOM-Styles setzen (verhindert Layout-Thrashing)
                 const snapX = x, snapY = y, snapW = width, snapH = height;
                 requestAnimationFrame(() => {
                     selectionRafPending = false;
                     if (!selectionBox) return;
-                    selectionBox.style.left = `${cachedCanvasRect.left + snapX * scaleX}px`;
-                    selectionBox.style.top = `${cachedCanvasRect.top + snapY * scaleY}px`;
-                    selectionBox.style.width = `${snapW * scaleX}px`;
+
+                    // Rect frisch lesen (kompensiert Scroll + Zoom korrekt,
+                    // da getBoundingClientRect stets aktuelle Viewport-Position liefert)
+                    const rect = canvas.getBoundingClientRect();
+                    const block = this.context.blocks[blockIndex];
+                    const bw = block?.bbox.width  || parseFloat(canvas.style.width)  || rect.width;
+                    const bh = block?.bbox.height || parseFloat(canvas.style.height) || rect.height;
+                    // Skala: Canvas-Koordinaten → CSS-Viewport-Pixel
+                    const scaleX = rect.width  / bw;
+                    const scaleY = rect.height / bh;
+
+                    selectionBox.style.left   = `${rect.left + snapX * scaleX}px`;
+                    selectionBox.style.top    = `${rect.top  + snapY * scaleY}px`;
+                    selectionBox.style.width  = `${snapW * scaleX}px`;
                     selectionBox.style.height = `${snapH * scaleY}px`;
                 });
             }
@@ -770,24 +788,28 @@ export class DrawingManager {
             : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'));
 
         let cache = this._strokeCache.get(block.id);
-        // Cache-Größe in logischen Pixeln (block.bbox), nicht physischen (canvas.width)
+        // Cache-Größe in DPR-Pixeln (nicht viewScale) — viewScale wird erst beim drawImage angewendet
+        const cacheDpr = this._cacheDpr;
         const needsRebuild = !cache
-            || cache.width !== block.bbox.width
-            || cache.height !== block.bbox.height;
+            || cache.width !== block.bbox.width * cacheDpr
+            || cache.height !== block.bbox.height * cacheDpr;
 
         if (needsRebuild) {
             cache = document.createElement('canvas');
-            cache.width = block.bbox.width;   // logische Größe
-            cache.height = block.bbox.height;
+            cache.width = block.bbox.width * cacheDpr;    // DPR-Auflösung, kein viewScale
+            cache.height = block.bbox.height * cacheDpr;
             this._strokeCache.set(block.id, cache);
             this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
         }
 
-        // Expliziter Transform: Verhindert Fehler wenn canvas.width-Zuweisung den Scale zwischendurch zurückgesetzt hat
-        const dpr = window.devicePixelRatio || 1;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Expliziter Transform: DPR × viewScale → Canvas-Backing ist bbox × effectiveDpr groß
+        const effectiveDpr = this._effectiveDpr;
+        ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
         ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
-        if (cache) ctx.drawImage(cache, 0, 0);
+        // Zielgröße in logischen Koordinaten angeben → Transform skaliert korrekt
+        // Cache (DPR-Pixel) → Canvas (effectiveDpr-Pixel): viewScale-facher Upscale, aber
+        // der Cache hat bereits DPR-Qualität, also maximal 1 Gerätepixel = 1 Cache-Pixel
+        if (cache) ctx.drawImage(cache, 0, 0, block.bbox.width, block.bbox.height);
 
         if (this.isDrawing && this.currentStroke.length >= 1) {
             const currentBlock = this.context.blocks[this.context.currentBlockIndex];
@@ -852,9 +874,16 @@ export class DrawingManager {
         const ctx = cache.getContext('2d');
         if (!ctx) return;
 
+        const dpr = this._cacheDpr;
+
+        // Hintergrund in physischen Pixeln füllen (vor dem Scale)
         ctx.clearRect(0, 0, cache.width, cache.height);
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, cache.width, cache.height);
+
+        // DPR-Transform setzen: Striche werden in logischen Koordinaten gezeichnet,
+        // aber mit voller Gerätepixel-Auflösung gerendert → scharfe Bézier-Kurven
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         this.drawGrid(cache, block);
 
@@ -915,6 +944,9 @@ export class DrawingManager {
 
         const ctx = cache.getContext('2d');
         if (!ctx) return;
+
+        // DPR-Transform explizit setzen (konsistent mit _renderStrokesToCache)
+        ctx.setTransform(this._cacheDpr, 0, 0, this._cacheDpr, 0, 0);
 
         const ds = this.getBlockDisplaySettings(block);
         const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
@@ -991,12 +1023,13 @@ export class DrawingManager {
         }
 
         const dpr = window.devicePixelRatio || 1;
+        const effectiveDpr = this._effectiveDpr;
 
-        // Cache in logischer Größe erweitern, Inhalt kopieren
+        // Cache in DPR-Größe erweitern, Inhalt kopieren
         const oldCache = this._strokeCache.get(block.id);
         const newCache = document.createElement('canvas');
-        newCache.width = block.bbox.width;    // logisch
-        newCache.height = block.bbox.height;
+        newCache.width = block.bbox.width * dpr;    // DPR-Auflösung (kein viewScale)
+        newCache.height = block.bbox.height * dpr;
         const cCtx = newCache.getContext('2d');
         if (cCtx) {
             const ds = this.getBlockDisplaySettings(block);
@@ -1004,22 +1037,26 @@ export class DrawingManager {
             const bgColor = ds.useColor
                 ? (ds.backgroundColor ?? '#ffffff')
                 : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'));
+            // 1. Hintergrund in physischen Pixeln (vor Transform)
             cCtx.fillStyle = bgColor;
             cCtx.fillRect(0, 0, newCache.width, newCache.height);
-            if (oldCache) cCtx.drawImage(oldCache, 0, 0); // logisch → logisch, 1:1 ✓
+            // 2. Alten Cache 1:1 kopieren (beide DPR-skaliert)
+            if (oldCache) cCtx.drawImage(oldCache, 0, 0);
+            // 3. DPR-Transform für spätere inkrementelle Striche setzen
+            cCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         this._strokeCache.set(block.id, newCache);
 
         // Canvas (physisch) vergrößern — canvas.width-Zuweisung löscht Kontext-State
-        canvas.width = block.bbox.width * dpr;
-        canvas.height = block.bbox.height * dpr;
+        canvas.width = block.bbox.width * effectiveDpr;
+        canvas.height = block.bbox.height * effectiveDpr;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            ctx.scale(dpr, dpr);
+            ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            // Logischer Cache auf skaliertem Kontext: füllt exakt die Zeichenfläche
-            ctx.drawImage(newCache, 0, 0);
+            // Cache in logischen Koordinaten zeichnen → Transform skaliert auf Canvas
+            ctx.drawImage(newCache, 0, 0, block.bbox.width, block.bbox.height);
             // Aktuell gezeichneten Stroke wiederherstellen (liegt nicht im Cache)
             if (this.isDrawing && this.currentStroke.length >= 2) {
                 const style = this._currentDrawStyle ?? this.currentPenStyle;
@@ -1038,14 +1075,14 @@ export class DrawingManager {
     }
 
     public resizeCanvas(canvas: HTMLCanvasElement, block: Block): void {
-        const dpr = window.devicePixelRatio || 1;
+        const effectiveDpr = this._effectiveDpr;
 
-        canvas.width = block.bbox.width * dpr;
-        canvas.height = block.bbox.height * dpr;
+        canvas.width = block.bbox.width * effectiveDpr;
+        canvas.height = block.bbox.height * effectiveDpr;
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
-            ctx.scale(dpr, dpr);
+            ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
         }
@@ -1571,6 +1608,30 @@ export class DrawingManager {
         });
     }
 
+    /**
+     * Wird von InkView.setViewScale() aufgerufen.
+     * Passt das physische Canvas-Backing aller Blöcke an den neuen effectiveDpr an,
+     * ohne den Stroke-Cache zu invalidieren (der ist DPR-basiert und bleibt gültig).
+     */
+    public resizeAllCanvasesForViewScale(): void {
+        if (!this.context.blocksContainer) return;
+        const effectiveDpr = this._effectiveDpr;
+
+        this.context.blocksContainer.querySelectorAll<HTMLCanvasElement>('canvas').forEach(canvas => {
+            const blockId = canvas.closest('.ink-block')?.getAttribute('data-block-id');
+            if (!blockId) return;
+            const block = this.context.blocks.find(b => b.id === blockId);
+            if (!block) return;
+
+            // Canvas auf neue Größe bringen (löscht den Canvas-Inhalt)
+            canvas.width  = block.bbox.width  * effectiveDpr;
+            canvas.height = block.bbox.height * effectiveDpr;
+
+            // Cache ist noch gültig → sofort neu zeichnen ohne Rebuild
+            this._drawBlockStrokesImmediate(canvas, block);
+        });
+    }
+
     // Grid Patern ----------------------------
     private drawGrid(canvas: HTMLCanvasElement, block: Block): void {
         const ds = this.getBlockDisplaySettings(block);
@@ -1593,19 +1654,19 @@ export class DrawingManager {
         ctx.fillStyle = gridColor;
         ctx.lineWidth = grid.lineWidth ?? 0.5;
 
-        const size = grid.size;
-        const width = canvas.width;
-        const height = canvas.height;
+        // Logische Dimensionen verwenden (ctx hat bereits DPR-Transform gesetzt)
+        const width = block.bbox.width;
+        const height = block.bbox.height;
 
         switch (grid.type) {
             case 'grid':
-                this.drawGridPattern(ctx, width, height, size);
+                this.drawGridPattern(ctx, width, height, grid.size);
                 break;
             case 'lines':
-                this.drawLinePattern(ctx, width, height, size);
+                this.drawLinePattern(ctx, width, height, grid.size);
                 break;
             case 'dots':
-                this.drawDotPattern(ctx, width, height, size);
+                this.drawDotPattern(ctx, width, height, grid.size);
                 break;
         }
 
@@ -1735,19 +1796,20 @@ export class DrawingManager {
                 || (isDark ? '#1a1a1a' : '#ffffff'))
             : (ds.backgroundColor ?? '#ffffff');
 
-        // Cache in LOGISCHEN Pixeln – konsistent mit _drawBlockStrokesImmediate
+        // Cache in DPR-Auflösung (viewScale-unabhängig) — konsistent mit _drawBlockStrokesImmediate
+        const cacheDpr = this._cacheDpr;
         const cache = document.createElement('canvas');
-        cache.width = block.bbox.width;
-        cache.height = block.bbox.height;
+        cache.width = block.bbox.width * cacheDpr;
+        cache.height = block.bbox.height * cacheDpr;
         this._strokeCache.set(block.id, cache);
 
         this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
 
-        // Expliziter Transform: unabhängig davon ob canvas.width zwischendurch zurückgesetzt wurde
-        const dpr = window.devicePixelRatio || 1;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Expliziter Transform: effectiveDpr = DPR × viewScale
+        const effectiveDpr = this._effectiveDpr;
+        ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
         ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
-        ctx.drawImage(cache, 0, 0);
+        ctx.drawImage(cache, 0, 0, block.bbox.width, block.bbox.height);
 
         this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
     }

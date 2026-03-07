@@ -506,7 +506,7 @@ export class ToolbarManager {
         section.appendChild(this.lbl('Ansicht'));
 
         const initScale = this.context.viewScale ?? 1.0;
-        const viewZoomInput = this.rangeInput(0.5, 2.0, 0.05, initScale, '60px',
+        const viewZoomInput = this.rangeInput(0.5, 5.0, 0.1, initScale, '80px',
             'Ansichts-Zoom: vergrößert / verkleinert die Blöcke nur in der Bearbeitungsansicht');
         const viewZoomVal = document.createElement('span');
         viewZoomVal.textContent = `${Math.round(initScale * 100)}%`;

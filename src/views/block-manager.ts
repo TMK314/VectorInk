@@ -165,9 +165,11 @@ export class BlockManager {
         const ctx = canvas.getContext('2d');
         if (ctx) {
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = block.bbox.width * dpr;
-            canvas.height = block.bbox.height * dpr;
-            ctx.scale(dpr, dpr);
+            const viewScale = this.context.viewScale || 1;
+            const effectiveDpr = dpr * viewScale;
+            canvas.width = block.bbox.width * effectiveDpr;
+            canvas.height = block.bbox.height * effectiveDpr;
+            ctx.scale(effectiveDpr, effectiveDpr);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
         }

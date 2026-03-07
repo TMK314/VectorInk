@@ -341,6 +341,9 @@ export class InkView extends FileView {
         if (this.blocksContainer) {
             (this.blocksContainer as HTMLElement).style.zoom = String(v);
         }
+        // Canvas-Backing aller Blöcke an neuen effectiveDpr anpassen
+        // (verhindert Overflow wenn transform > canvas.width)
+        this.drawingManager?.resizeAllCanvasesForViewScale();
     }
 
     onunload(): void {
