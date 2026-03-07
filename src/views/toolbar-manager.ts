@@ -272,7 +272,6 @@ export class ToolbarManager {
             });
 
             if (this.bgColorInput) this.bgColorInput.disabled = !newValue;
-            new Notice(newValue ? 'Using color for styling' : 'Using block-based styling');
             this.context.drawingManager.redrawAllBlocks();
         };
         colorToggleContainer.appendChild(this.colorToggle);

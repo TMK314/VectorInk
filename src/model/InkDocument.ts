@@ -164,6 +164,8 @@ export class InkDocument {
         return encodeId(this._idCounter++);
     }
 
+    get idCounter(): number { return this._idCounter; }
+
     get strokes(): Stroke[] { return [...this.data.strokes]; }
     get blocks(): Block[] { return [...this.data.blocks]; }
     get gridSettings(): GridSettings { return this.data.document.grid; }

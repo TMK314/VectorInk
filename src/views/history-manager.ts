@@ -53,28 +53,34 @@ export class HistoryManager {
         this.updateButtonStates();
     }
 
+    // history-manager.ts
     private applyReverse(action: HistoryAction): void {
         const doc = this.context.document;
         if (!doc) return;
 
         switch (action.type) {
+
             case 'ADD_STROKE': {
                 const block = this.context.blocks.find(b => b.id === action.blockId);
                 if (!block) break;
 
+                // Dokument entfernen
                 doc.removeStroke(action.stroke.id);
-                block.strokeIds = block.strokeIds.filter(id => id !== action.stroke.id);
 
-                // Cache invalidieren
-                const sentinel = document.createElement('canvas');
-                this.context.drawingManager['_strokeCache'].set(block.id, sentinel);
+                // GENAU den Eintrag entfernen (kein filter!)
+                const idx = block.strokeIds.lastIndexOf(action.stroke.id);
+                if (idx !== -1) {
+                    block.strokeIds.splice(idx, 1);
+                }
+
+                // Cache vollständig invalidieren
+                this.context.drawingManager.invalidateBlockCache(block.id);
 
                 const canvas = this.context.blockManager.getCanvasForBlock(block.id);
                 if (canvas) {
                     this.context.drawingManager.renderBlockSync(canvas, block);
                 }
 
-                this.context.strokeSelectionManager.selectedStrokes.clear();
                 break;
             }
             case 'ERASE_STROKES': {

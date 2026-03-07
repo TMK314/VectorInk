@@ -313,7 +313,8 @@ export class InkView extends FileView {
             );
 
             // Dokument neu instanziieren (sauberer Zustand)
-            this.document = new InkDocument(docData);
+            const preservedIdCounter = this.document.idCounter;
+            this.document = new InkDocument(docData, preservedIdCounter);
 
             // 🔥 WICHTIG: jetzt V2 Serialisierung nutzen
             const serialized = this.document.toJSON();
