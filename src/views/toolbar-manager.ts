@@ -125,9 +125,13 @@ export class ToolbarManager {
         this.toolbar.appendChild(this.sep());
         this.buildBlockSettings(block);
 
-        // 5 ── Zoom ───────────────────────────────────────────────────────────
+        // 5 ── Strichgewicht ──────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.buildZoom(block);
+
+        // 5b ── Ansichts-Zoom ─────────────────────────────────────────────────
+        this.toolbar.appendChild(this.sep());
+        this.buildViewZoom();
 
         // 6 ── Glättung ───────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
@@ -461,18 +465,18 @@ export class ToolbarManager {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  Abschnitt 5: Zoom
+    //  Abschnitt 5: Strichgewicht
     // ════════════════════════════════════════════════════════════════════════
 
     private buildZoom(block: Block | undefined): void {
         const section  = this.row();
-        section.appendChild(this.lbl('Zoom'));
+        section.appendChild(this.lbl('Strichgewicht'));
 
         const initMult = block?.displaySettings?.widthMultiplier
             ?? this.context.drawingManager?.widthMultiplier ?? 1.0;
 
         this.widthMultiplierInput = this.rangeInput(0.5, 4.0, 0.1, initMult, '60px',
-            'Strichstärken-Multiplikator');
+            'Strichgewicht: skaliert alle Strichbreiten der ausgewählten Blöcke');
         this.multiplierValue = document.createElement('span');
         this.multiplierValue.textContent = `${initMult.toFixed(1)}×`;
         this.multiplierValue.style.cssText = 'font-size:11px;min-width:28px;';
@@ -490,6 +494,32 @@ export class ToolbarManager {
 
         section.appendChild(this.widthMultiplierInput);
         section.appendChild(this.multiplierValue);
+        this.toolbar!.appendChild(section);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  Abschnitt 5b: Ansichts-Zoom (nur Darstellung, kein Einfluss auf Daten)
+    // ════════════════════════════════════════════════════════════════════════
+
+    private buildViewZoom(): void {
+        const section = this.row();
+        section.appendChild(this.lbl('Ansicht'));
+
+        const initScale = this.context.viewScale ?? 1.0;
+        const viewZoomInput = this.rangeInput(0.5, 2.0, 0.05, initScale, '60px',
+            'Ansichts-Zoom: vergrößert / verkleinert die Blöcke nur in der Bearbeitungsansicht');
+        const viewZoomVal = document.createElement('span');
+        viewZoomVal.textContent = `${Math.round(initScale * 100)}%`;
+        viewZoomVal.style.cssText = 'font-size:11px;min-width:32px;';
+
+        viewZoomInput.oninput = () => {
+            const v = parseFloat(viewZoomInput.value);
+            viewZoomVal.textContent = `${Math.round(v * 100)}%`;
+            this.context.setViewScale(v);
+        };
+
+        section.appendChild(viewZoomInput);
+        section.appendChild(viewZoomVal);
         this.toolbar!.appendChild(section);
     }
 

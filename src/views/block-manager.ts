@@ -38,12 +38,12 @@ export class BlockManager {
         blockEl.dataset.blockId = block.id;
         blockEl.dataset.blockType = block.type;
         blockEl.style.position = 'relative';
-        blockEl.style.marginTop = `12px`;
-        blockEl.style.marginBottom = `12px`;
+        blockEl.style.width = `${block.bbox.width + 24}px`;   // canvas + 2×12px padding
+        blockEl.style.marginTop = '10px';
+        blockEl.style.marginBottom = '10px';
         blockEl.style.borderRadius = '6px';
         blockEl.style.background = 'var(--background-primary)';
-        blockEl.style.padding = isPrimary ? '15px' : '8px';
-        blockEl.style.minHeight = isPrimary ? '150px' : '100px';
+        blockEl.style.padding = '12px';
         blockEl.style.transition = 'all 0.2s ease';
         blockEl.style.userSelect = 'none';
         blockEl.style.cursor = 'default';
@@ -73,8 +73,9 @@ export class BlockManager {
             const typeSelector = document.createElement('select');
             typeSelector.style.marginRight = '10px';
             typeSelector.style.fontSize = '12px';
-            typeSelector.style.padding = '2px 5px';
-            typeSelector.style.flex = '1';
+            typeSelector.style.padding = '2px 4px';
+            typeSelector.style.width = '130px';
+            typeSelector.style.flexShrink = '0';
 
             const blockTypes: { value: BlockType, label: string, icon: string }[] = [
                 { value: 'paragraph', label: 'Paragraph', icon: '📝' },
@@ -525,15 +526,8 @@ export class BlockManager {
 
     public updateBlockMargins(): void {
         if (!this.context.blocksContainer) return;
-
         const blocks = this.context.blocksContainer.querySelectorAll<HTMLElement>('.ink-block');
-        blocks.forEach((block, index) => {
-            const isSelected = index === this.context.currentBlockIndex;
-            const marginTop = 12;
-            const marginBottom = 12;
-            block.style.marginTop = `${marginTop}px`;
-            block.style.marginBottom = `${marginBottom}px`;
-        });
+        blocks.forEach(() => { /* Abstände werden in createBlockElement gesetzt */ });
     }
 
     /**

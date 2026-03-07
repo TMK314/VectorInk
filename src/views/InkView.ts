@@ -27,6 +27,7 @@ export class InkView extends FileView {
     public blocks: Block[] = [];
     public currentBlockIndex = 0;
     public blocksContainer: HTMLElement | null = null;
+    public viewScale: number = 1.0;
 
     public strokeSelectionManager: StrokeSelectionManager;
     public historyManager: HistoryManager;
@@ -99,12 +100,18 @@ export class InkView extends FileView {
 
         this.toolbarManager.createToolbar(main);
 
+        // Äußerer Scroll-Wrapper
+        const scrollWrapper = document.createElement('div');
+        scrollWrapper.style.cssText = 'flex:1;overflow:auto;background:var(--background-primary);';
+        main.appendChild(scrollWrapper);
+
+        // Innerer zentrierter Container – hier landen alle Block-Elemente
         this.blocksContainer = document.createElement('div');
-        this.blocksContainer.style.flex = '1';
-        this.blocksContainer.style.overflow = 'auto';
-        this.blocksContainer.style.padding = '20px';
-        this.blocksContainer.style.backgroundColor = 'var(--background-primary)';
-        main.appendChild(this.blocksContainer);
+        this.blocksContainer.style.cssText =
+            'max-width:880px;margin:0 auto;padding:24px 20px;' +
+            'display:flex;flex-direction:column;align-items:center;';
+        this.blocksContainer.style.zoom = String(this.viewScale);
+        scrollWrapper.appendChild(this.blocksContainer);
 
         if (this.document) {
             this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);
@@ -326,6 +333,13 @@ export class InkView extends FileView {
         } catch (error) {
             console.error('❌ Failed to save document:', error);
             new Notice(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    public setViewScale(v: number): void {
+        this.viewScale = v;
+        if (this.blocksContainer) {
+            (this.blocksContainer as HTMLElement).style.zoom = String(v);
         }
     }
 
