@@ -98,4 +98,8 @@ export interface BlockDisplaySettings {
     useColor: boolean;
     widthMultiplier: number;
     backgroundColor?: string;
+    /** Überschriften: Trennlinie unterhalb des Blocks in der Vorschau (Standard: true bei heading*) */
+    showSeparator?: boolean;
+    /** Zitat-Blöcke: Linker Strich + Einrückung in der Vorschau (Standard: true bei quote) */
+    showQuoteBar?: boolean;
 }

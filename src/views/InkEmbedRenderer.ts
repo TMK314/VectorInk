@@ -101,7 +101,10 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         // Alle Blöcke sequenziell als SVGs rendern
         for (const block of this.blocks) {
             const blockSvg = this.buildBlockSVG(block);
-            if (blockSvg) svgWrapper.appendChild(blockSvg);
+            if (blockSvg) {
+                const wrapper = this.wrapBlockSvgForPreview(block, blockSvg);
+                svgWrapper.appendChild(wrapper);
+            }
         }
 
         svgWrapper.addEventListener('click', () => this.activateEdit());
@@ -168,6 +171,37 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             this.appendSVGStroke(svg, stroke, ns, widthMultiplier, useColor, isDrawing);
         }
         return svg;
+    }
+
+    /**
+     * Hüllt eine Block-SVG in einen Container und fügt je nach Block-Typ visuelle
+     * Dekorationen hinzu:
+     *  - heading*  → horizontale Trennlinie darunter (wenn showSeparator !== false)
+     *  - quote     → linker vertikaler Strich + Einrückung (wenn showQuoteBar !== false)
+     */
+    private wrapBlockSvgForPreview(block: Block, svg: SVGSVGElement): HTMLElement {
+        const isHeading = block.type.startsWith('heading');
+        const isQuote = block.type === 'quote';
+        const showSeparator = block.displaySettings?.showSeparator ?? isHeading;
+        const showQuoteBar = block.displaySettings?.showQuoteBar ?? isQuote;
+
+        const container = document.createElement('div');
+        container.style.position = 'relative';
+        container.style.marginBottom = '4px';
+
+        if (showQuoteBar) {
+            container.classList.add('ink-embed-block-quote');
+        }
+
+        container.appendChild(svg);
+
+        if (showSeparator) {
+            const hr = document.createElement('div');
+            hr.classList.add('ink-embed-block-separator');
+            container.appendChild(hr);
+        }
+
+        return container;
     }
 
     private getTypeWidthMultiplier(type: BlockType): number {
@@ -344,12 +378,14 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const penBtn = this.createToolBtn('✒', 'Stift', this.currentTool === 'pen', () => {
             this.currentTool = 'pen';
             this.updateToolActive(this.toolbar!, 'pen');
+            this._updateEmbedCanvasCursors();
         });
         penBtn.dataset.tool = 'pen';
 
         const eraserBtn = this.createToolBtn('⌫', 'Radierer', this.currentTool === 'eraser', () => {
             this.currentTool = 'eraser';
             this.updateToolActive(this.toolbar!, 'eraser');
+            this._updateEmbedCanvasCursors();
         });
         eraserBtn.dataset.tool = 'eraser';
 
@@ -505,6 +541,41 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
         this.toolbar.appendChild(this.createSep());
 
+        // ── Block-Typ-Dekorationen (nur für relevante Typen) ──────────────────
+        const isHeading = block?.type?.startsWith('heading') ?? false;
+        const isQuote = block?.type === 'quote';
+        if (isHeading || isQuote) {
+            if (isHeading) {
+                const sepCheck = document.createElement('input');
+                sepCheck.type = 'checkbox';
+                sepCheck.checked = block?.displaySettings?.showSeparator ?? true;
+                sepCheck.title = 'Trennlinie unter Überschrift (Vorschau)';
+                this.toolbar.appendChild(sepCheck);
+                const sepLabel = this.toolbar.createSpan({ cls: 'ink-embed-label', text: '─' });
+                sepLabel.title = 'Trennlinie';
+                sepCheck.addEventListener('change', () => {
+                    const b = this.blocks[this.currentBlockIndex];
+                    if (!b) return;
+                    this.ensureDisplaySettings(b).showSeparator = sepCheck.checked;
+                });
+            }
+            if (isQuote) {
+                const barCheck = document.createElement('input');
+                barCheck.type = 'checkbox';
+                barCheck.checked = block?.displaySettings?.showQuoteBar ?? true;
+                barCheck.title = 'Linker Zitatstrich + Einrückung (Vorschau)';
+                this.toolbar.appendChild(barCheck);
+                const barLabel = this.toolbar.createSpan({ cls: 'ink-embed-label', text: '❝' });
+                barLabel.title = 'Zitatstrich';
+                barCheck.addEventListener('change', () => {
+                    const b = this.blocks[this.currentBlockIndex];
+                    if (!b) return;
+                    this.ensureDisplaySettings(b).showQuoteBar = barCheck.checked;
+                });
+            }
+            this.toolbar.appendChild(this.createSep());
+        }
+
         // ── Block hinzufügen ──────────────────────────────────────────────────
         this.createToolBtn('＋ Block', 'Neuer Block', false, () => {
             this.addBlock('paragraph', true);
@@ -533,6 +604,36 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         );
         const canvas = blockEl?.querySelector('canvas') as HTMLCanvasElement | null;
         if (canvas) this.drawBlockStrokes(canvas, block);
+    }
+
+    // ─── Cursor-Hilfsmethoden (Embed) ─────────────────────────────────────────
+
+    /**
+     * Gibt den passenden CSS-Cursor für das aktuelle Embed-Werkzeug zurück.
+     * Stift → Fadenkreuz, Radierer → SVG-Kreis.
+     */
+    private _getEmbedToolCursor(): string {
+        if (this.currentTool === 'eraser') {
+            const r = 12, size = r * 2 + 6, cx = r + 3, cy = r + 3;
+            const svg =
+                `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+                `<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(255,255,255,0.15)" ` +
+                `stroke="#444" stroke-width="1.5"/>` +
+                `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" ` +
+                `stroke="rgba(255,255,255,0.6)" stroke-width="0.75"/>` +
+                `</svg>`;
+            return `url('data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}') ${cx} ${cy}, cell`;
+        }
+        return 'crosshair';
+    }
+
+    /** Aktualisiert den Cursor aller Embed-Canvas-Elemente. */
+    private _updateEmbedCanvasCursors(): void {
+        if (!this.blocksContainer) return;
+        const cursor = this._getEmbedToolCursor();
+        this.blocksContainer.querySelectorAll<HTMLCanvasElement>('canvas').forEach(c => {
+            c.style.cursor = cursor;
+        });
     }
 
     private createToolBtn(label: string, title: string, active: boolean, onClick: () => void): HTMLElement {
@@ -591,7 +692,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         canvas.style.height = `${h}px`;    // Höhe explizit, wächst nach unten
         canvas.style.display = 'block';
         canvas.style.touchAction = 'none';
-        canvas.style.cursor = 'crosshair';
+        canvas.style.cursor = this._getEmbedToolCursor(); // Cursor passend zum aktuellen Werkzeug
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
