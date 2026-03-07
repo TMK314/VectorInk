@@ -1,5 +1,7 @@
+import { Notice, TFile } from 'obsidian';
 import { Block, BlockDisplaySettings, StrokeStyle } from '../types';
 import { InkView } from './InkView';
+import { InkEmbedRenderer } from './InkEmbedRenderer';
 
 /**
  * Toolbar-Reihenfolge:
@@ -136,6 +138,13 @@ export class ToolbarManager {
         this.toolbar.appendChild(this.btn('＋ Block', 'Neuen Block hinzufügen',
             () => this.context.blockManager.addNewBlock('paragraph', this.context.blocks.length)));
 
+        // 8 ── Export ──────────────────────────────────────────────────────────
+        this.toolbar.appendChild(this.sep());
+        this.toolbar.appendChild(this.btn('↓ SVG', 'Als SVG exportieren',
+            () => this.exportSVG()));
+        this.toolbar.appendChild(this.btn('↓ PNG', 'Als PNG exportieren',
+            () => this.exportPNG()));
+
         container.appendChild(this.toolbar);
     }
 
@@ -252,6 +261,7 @@ export class ToolbarManager {
             });
             if (this.bgColorInput) this.bgColorInput.disabled = !val;
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
         colorRow.appendChild(this.colorToggle);
 
@@ -269,6 +279,7 @@ export class ToolbarManager {
             });
             this.context.drawingManager.redrawAllBlocks();
         };
+        this.bgColorInput.onchange  = () => { this.context.saveDocument(true); };
         colorRow.appendChild(this.bgColorInput);
         this.toolbar!.appendChild(colorRow);
 
@@ -324,6 +335,7 @@ export class ToolbarManager {
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.type = type; });
             this.context.document?.setGridSettings({ type });
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
         tRow.appendChild(this.gridTypeSelect); subs.push(tRow);
 
@@ -338,6 +350,7 @@ export class ToolbarManager {
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.size = size; });
             this.context.document?.setGridSettings({ size });
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
         szRow.appendChild(this.gridSizeInput); subs.push(szRow);
 
@@ -350,6 +363,7 @@ export class ToolbarManager {
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.opacity = opacity; });
             this.context.document?.setGridSettings({ opacity });
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
         opRow.appendChild(this.gridOpacityInput); subs.push(opRow);
 
@@ -363,6 +377,7 @@ export class ToolbarManager {
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.color = color; });
             this.context.document?.setGridSettings({ color });
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
         cRow.appendChild(this.gridColorInput); subs.push(cRow);
 
@@ -375,6 +390,7 @@ export class ToolbarManager {
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.lineWidth = lineWidth; });
             this.context.document?.setGridSettings({ lineWidth });
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
         lwRow.appendChild(this.gridLineWidthInput); subs.push(lwRow);
 
@@ -388,6 +404,7 @@ export class ToolbarManager {
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.enabled = enabled; });
             this.context.document?.setGridSettings({ enabled });
             this.context.drawingManager.redrawAllBlocks();
+            this.context.saveDocument(true);
         };
 
         this.toolbar!.appendChild(this.gridContainer);
@@ -463,10 +480,12 @@ export class ToolbarManager {
         this.widthMultiplierInput.oninput = () => {
             const value = parseFloat(this.widthMultiplierInput!.value);
             this.context.drawingManager.widthMultiplier = value;
-            const b = this.getCurrentBlock();
-            if (b) this.ensureBlockDS(b).widthMultiplier = value;
+            this.applyToSelected(b => { this.ensureBlockDS(b).widthMultiplier = value; });
             this.multiplierValue!.textContent = `${value.toFixed(1)}×`;
             this.context.drawingManager.redrawAllBlocks();
+        };
+        this.widthMultiplierInput.onchange = () => {
+            this.context.saveDocument(true);
         };
 
         section.appendChild(this.widthMultiplierInput);
@@ -693,6 +712,100 @@ export class ToolbarManager {
             };
         }
         return block.displaySettings;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  Export: SVG + PNG
+    // ════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Gibt einen nicht-kollidierenden Pfad zurück.
+     * Existiert `base` bereits, wird `(1)`, `(2)`, … vor die Extension angehängt.
+     * Beispiel: "notes/sketch.svg" → "notes/sketch (2).svg"
+     */
+    private resolveExportPath(base: string): string {
+        const vault = this.context.app.vault;
+        if (!vault.getAbstractFileByPath(base)) return base;
+
+        // Dateiname und Extension trennen
+        const lastDot = base.lastIndexOf('.');
+        const withoutExt = lastDot >= 0 ? base.slice(0, lastDot) : base;
+        const ext        = lastDot >= 0 ? base.slice(lastDot)    : '';
+
+        let n = 1;
+        let candidate: string;
+        do {
+            candidate = `${withoutExt} (${n})${ext}`;
+            n++;
+        } while (vault.getAbstractFileByPath(candidate));
+
+        return candidate;
+    }
+
+    private async exportSVG(): Promise<void> {
+        const { blocks, document: inkDoc, file } = this.context;
+        if (!inkDoc || !file || blocks.length === 0) {
+            new Notice('Ink: Kein Dokument zum Exportieren');
+            return;
+        }
+        try {
+            const svg = InkEmbedRenderer.buildCombinedSVG(blocks, inkDoc);
+            const svgStr = new XMLSerializer().serializeToString(svg);
+            const basePath  = file.path.replace(/\.ink$/, '.svg');
+            const exportPath = this.resolveExportPath(basePath);
+            await this.context.app.vault.create(exportPath, svgStr);
+            new Notice(`SVG exportiert: ${exportPath}`);
+        } catch (e) {
+            console.error('SVG export failed', e);
+            new Notice('Ink: SVG-Export fehlgeschlagen');
+        }
+    }
+
+    private async exportPNG(): Promise<void> {
+        const { blocks, document: inkDoc, file } = this.context;
+        if (!inkDoc || !file || blocks.length === 0) {
+            new Notice('Ink: Kein Dokument zum Exportieren');
+            return;
+        }
+        try {
+            const svg = InkEmbedRenderer.buildCombinedSVG(blocks, inkDoc);
+            const w = parseInt(svg.getAttribute('width') || '800');
+            const h = parseInt(svg.getAttribute('height') || '600');
+            const svgStr = new XMLSerializer().serializeToString(svg);
+            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+
+            const img = new Image();
+            img.onload = async () => {
+                const scale = 2;
+                const canvas = document.createElement('canvas');
+                canvas.width  = w * scale;
+                canvas.height = h * scale;
+                const ctx = canvas.getContext('2d')!;
+                ctx.scale(scale, scale);
+                ctx.drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(url);
+
+                canvas.toBlob(async (pngBlob) => {
+                    if (!pngBlob) { new Notice('Ink: PNG-Export fehlgeschlagen'); return; }
+                    const buffer = await pngBlob.arrayBuffer();
+                    const basePath   = file.path.replace(/\.ink$/, '.png');
+                    const exportPath = this.resolveExportPath(basePath);
+                    try {
+                        await this.context.app.vault.createBinary(exportPath, buffer);
+                        new Notice(`PNG exportiert: ${exportPath}`);
+                    } catch (e) {
+                        console.error('PNG save failed', e);
+                        new Notice('Ink: PNG-Export fehlgeschlagen');
+                    }
+                }, 'image/png');
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); new Notice('Ink: PNG-Export fehlgeschlagen'); };
+            img.src = url;
+        } catch (e) {
+            console.error('PNG export failed', e);
+            new Notice('Ink: PNG-Export fehlgeschlagen');
+        }
     }
 
     private pushBlockRestyleHistory(apply: (b: Block) => Partial<BlockDisplaySettings>): void {

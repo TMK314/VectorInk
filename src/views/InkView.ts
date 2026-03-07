@@ -283,7 +283,7 @@ export class InkView extends FileView {
         }
     }
 
-    async saveDocument(): Promise<void> {
+    async saveDocument(silent = false): Promise<void> {
         if (!this.document || !this.file) {
             console.error('❌ No document or file to save');
             new Notice('No document to save');
@@ -321,7 +321,7 @@ export class InkView extends FileView {
             await this.app.vault.modify(this.file, serialized);
 
             console.log('✅ Document saved successfully');
-            new Notice('Document saved');
+            if (!silent) new Notice('Document saved');
 
         } catch (error) {
             console.error('❌ Failed to save document:', error);

@@ -100,7 +100,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
         // Alle Blöcke sequenziell als SVGs rendern
         for (const block of this.blocks) {
-            const blockSvg = this.buildBlockSVG(block);
+            const blockSvg = InkEmbedRenderer.buildBlockSVG(block, this.inkDoc!);
             if (blockSvg) {
                 const wrapper = this.wrapBlockSvgForPreview(block, blockSvg);
                 svgWrapper.appendChild(wrapper);
@@ -110,10 +110,9 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         svgWrapper.addEventListener('click', () => this.activateEdit());
     }
 
-    private buildBlockSVG(block: Block): SVGSVGElement | null {
-        if (!this.inkDoc) return null;
+    public static buildBlockSVG(block: Block, inkDoc: InkDocument): SVGSVGElement | null {
         const strokes = block.strokeIds
-            .map(id => this.inkDoc!.strokes.find(s => s.id === id))
+            .map(id => inkDoc.strokes.find(s => s.id === id))
             .filter((s): s is Stroke => !!s);
 
         if (strokes.length === 0) return null;
@@ -158,17 +157,17 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         // Grid als SVG-Pattern einzeichnen
         const grid = block.displaySettings?.grid;
         if (grid?.enabled && grid.type !== 'none') {
-            this.appendGridToSVG(svg, ns, vbX, vbY, vbW, vbH, grid, useColor);
+            InkEmbedRenderer.appendGridToSVG(svg, ns, vbX, vbY, vbW, vbH, grid, useColor);
         }
 
         // Drawing-Blöcke: gespeicherte Strichdicke, kein block-spezifischer Multiplikator.
         // Alle anderen Typen: typeMultiplier × widthMultiplier (+ bold-Semantic in appendSVGStroke).
         const isDrawing = block.type === 'drawing';
-        const typeMultiplier = isDrawing ? 1.0 : this.getTypeWidthMultiplier(block.type);
+        const typeMultiplier = isDrawing ? 1.0 : InkEmbedRenderer.getTypeWidthMultiplier(block.type);
         const widthMultiplier = isDrawing ? 1.0 : (block.displaySettings?.widthMultiplier ?? 1.0) * typeMultiplier;
 
         for (const stroke of strokes) {
-            this.appendSVGStroke(svg, stroke, ns, widthMultiplier, useColor, isDrawing);
+            InkEmbedRenderer.appendSVGStroke(svg, stroke, ns, widthMultiplier, useColor, isDrawing);
         }
         return svg;
     }
@@ -204,7 +203,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         return container;
     }
 
-    private getTypeWidthMultiplier(type: BlockType): number {
+    public static getTypeWidthMultiplier(type: BlockType): number {
         switch (type) {
             case 'heading1': return 2.5;
             case 'heading2': return 2.0;
@@ -217,7 +216,152 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         }
     }
 
-    private appendGridToSVG(
+    /**
+     * Kombiniert alle Blöcke zu einem einzigen exportfähigen SVG-Element.
+     * Blöcke werden vertikal gestapelt; Dekorationen (Separator-Linie bei Headings,
+     * Zitatstrich + Hintergrund bei Quotes) werden als native SVG-Elemente eingebettet.
+     */
+    public static buildCombinedSVG(blocks: Block[], inkDoc: InkDocument): SVGSVGElement {
+        const ns = 'http://www.w3.org/2000/svg';
+        const blockPad = 8;   // horizontaler Einzug links/rechts
+        const blockGap = 8;   // vertikaler Abstand zwischen Blöcken
+        const exportWidth = 800;
+
+        const isDark = document.body.classList.contains('theme-dark');
+        const cs = getComputedStyle(document.body);
+        const themeBg     = cs.getPropertyValue('--background-primary').trim()       || (isDark ? '#1a1a1a' : '#ffffff');
+        const accentColor = cs.getPropertyValue('--interactive-accent').trim()        || '#4a90d9';
+        const borderColor = cs.getPropertyValue('--background-modifier-border').trim()|| (isDark ? '#444' : '#ccc');
+
+        // quote-Hintergrund: 6% accent over transparent → einfach 6% opacity auf accentColor
+        const quoteBarW   = 4;   // px – Breite des linken Zitatstrichs
+        const quotePadL   = 12;  // px – Einrückung nach dem Strich
+        const quotePadLTotal = quoteBarW + quotePadL; // = 16
+
+        // Separator: 2px hoch, opacity 0.85
+        const sepH        = 2;
+        const sepMarginT  = 2;
+        const sepMarginB  = 6;
+
+        // Slot-Berechnung: Höhe jedes Blocks inklusive Dekorationen
+        interface Slot {
+            block: Block;
+            blockSvg: SVGSVGElement | null;
+            yBlock: number;   // y-Startposition des block-SVG
+            xBlock: number;   // x-Startposition
+            wBlock: number;   // Breite des block-SVG
+            hBlock: number;   // Höhe des block-SVG
+            showSeparator: boolean;
+            showQuoteBar:  boolean;
+            totalH: number;   // Gesamthöhe dieses Slots (inkl. Dekorationen + gap)
+        }
+
+        const slots: Slot[] = [];
+        let yOffset = blockPad;
+
+        for (const block of blocks) {
+            const isHeading = block.type.startsWith('heading');
+            const isQuote   = block.type === 'quote';
+            const showSeparator = block.displaySettings?.showSeparator ?? isHeading;
+            const showQuoteBar  = block.displaySettings?.showQuoteBar  ?? isQuote;
+
+            const blockSvg = InkEmbedRenderer.buildBlockSVG(block, inkDoc);
+            const hBlock   = block.bbox.height || 100;
+            const xBlock   = isQuote ? blockPad + quotePadLTotal : blockPad;
+            const wBlock   = exportWidth - xBlock - blockPad;
+
+            // Separator-Höhe unterhalb des Blocks
+            const sepTotalH = showSeparator ? sepMarginT + sepH + sepMarginB : 0;
+            // Gesamthöhe dieses Slots
+            const totalH = hBlock + sepTotalH + blockGap;
+
+            slots.push({
+                block, blockSvg,
+                yBlock: yOffset,
+                xBlock, wBlock, hBlock,
+                showSeparator, showQuoteBar,
+                totalH
+            });
+
+            yOffset += totalH;
+        }
+
+        const totalSvgH = yOffset + blockPad;
+
+        // ── Haupt-SVG ──────────────────────────────────────────────────────────
+        const combined = document.createElementNS(ns, 'svg') as SVGSVGElement;
+        combined.setAttribute('xmlns', ns);
+        combined.setAttribute('width',   String(exportWidth));
+        combined.setAttribute('height',  String(totalSvgH));
+        combined.setAttribute('viewBox', `0 0 ${exportWidth} ${totalSvgH}`);
+
+        // Globaler Hintergrund
+        const bg = document.createElementNS(ns, 'rect');
+        bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+        bg.setAttribute('width', String(exportWidth)); bg.setAttribute('height', String(totalSvgH));
+        bg.setAttribute('fill', themeBg);
+        combined.appendChild(bg);
+
+        for (const slot of slots) {
+            const { block, blockSvg, yBlock, xBlock, wBlock, hBlock, showSeparator, showQuoteBar } = slot;
+
+            // ── Quote: Hintergrund-Rect + linker Strich ────────────────────────
+            if (showQuoteBar) {
+                // halbtransparenter Hintergrund (6 % accent)
+                const qBg = document.createElementNS(ns, 'rect');
+                qBg.setAttribute('x',      String(blockPad));
+                qBg.setAttribute('y',      String(yBlock));
+                qBg.setAttribute('width',  String(exportWidth - blockPad * 2));
+                qBg.setAttribute('height', String(hBlock));
+                qBg.setAttribute('fill',   accentColor);
+                qBg.setAttribute('opacity', '0.06');
+                qBg.setAttribute('rx', '4');
+                combined.appendChild(qBg);
+
+                // linker Strich
+                const qBar = document.createElementNS(ns, 'rect');
+                qBar.setAttribute('x',      String(blockPad));
+                qBar.setAttribute('y',      String(yBlock));
+                qBar.setAttribute('width',  String(quoteBarW));
+                qBar.setAttribute('height', String(hBlock));
+                qBar.setAttribute('fill',   accentColor);
+                qBar.setAttribute('rx', '2');
+                combined.appendChild(qBar);
+            }
+
+            // ── Block-SVG eingebettet als <svg> ────────────────────────────────
+            if (blockSvg) {
+                const inner = document.createElementNS(ns, 'svg') as SVGSVGElement;
+                inner.setAttribute('x',      String(xBlock));
+                inner.setAttribute('y',      String(yBlock));
+                inner.setAttribute('width',  String(wBlock));
+                inner.setAttribute('height', String(hBlock));
+                const vb = blockSvg.getAttribute('viewBox');
+                if (vb) inner.setAttribute('viewBox', vb);
+                inner.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+                while (blockSvg.firstChild) inner.appendChild(blockSvg.firstChild);
+                combined.appendChild(inner);
+            }
+
+            // ── Separator-Linie unterhalb des Blocks ───────────────────────────
+            if (showSeparator) {
+                const sepY = yBlock + hBlock + sepMarginT;
+                const sep = document.createElementNS(ns, 'rect');
+                sep.setAttribute('x',      String(blockPad));
+                sep.setAttribute('y',      String(sepY));
+                sep.setAttribute('width',  String(exportWidth - blockPad * 2));
+                sep.setAttribute('height', String(sepH));
+                sep.setAttribute('fill',   borderColor);
+                sep.setAttribute('opacity', '0.85');
+                sep.setAttribute('rx', '1');
+                combined.appendChild(sep);
+            }
+        }
+
+        return combined;
+    }
+
+    public static appendGridToSVG(
         svg: SVGSVGElement, ns: string,
         x: number, y: number, w: number, h: number,
         grid: GridSettings, useColor: boolean
@@ -269,7 +413,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         svg.appendChild(rect);
     }
 
-    private appendSVGStroke(
+    public static appendSVGStroke(
         svg: SVGSVGElement, stroke: Stroke, ns: string,
         widthMultiplier = 1.0, useColor = true, isDrawing = false
     ): void {
@@ -843,7 +987,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         // Drawing-Blöcke: gespeicherte Strichdicke, kein Multiplikator.
         // Alle anderen Typen: typeMultiplier × widthMultiplier.
         const isDrawing = block.type === 'drawing';
-        const typeMultiplier = isDrawing ? 1.0 : this.getTypeWidthMultiplier(block.type);
+        const typeMultiplier = isDrawing ? 1.0 : InkEmbedRenderer.getTypeWidthMultiplier(block.type);
         const widthMultiplier = isDrawing ? 1.0 : (block.displaySettings?.widthMultiplier ?? 1.0) * typeMultiplier;
 
         const fitter = new BezierCurveFitter();
