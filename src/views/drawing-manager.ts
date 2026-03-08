@@ -41,18 +41,10 @@ export class DrawingManager {
     public _currentErasedStrokes: Array<{ stroke: Stroke; blockStrokeIdIndex: number }> = [];
 
     /**
-     * DPR-Skalierung für den Stroke-Cache (DPR, kein viewScale).
-     * Der Cache ist viewScale-unabhängig — der viewScale wird erst beim Zeichnen
-     * auf das Haupt-Canvas via setTransform(effectiveDpr) angewendet.
-     */
-    private get _cacheDpr(): number {
-        return window.devicePixelRatio || 1;
-    }
-
-    /**
-     * Effektiver DPR für das Haupt-Canvas: DPR × viewScale.
-     * Das Canvas-Backing ist canvas.width = bbox × effectiveDpr,
-     * CSS zoom handhabt die visuelle Darstellung.
+     * Effektiver DPR für den Stroke-Cache UND das Haupt-Canvas.
+     * Cache und Canvas müssen dieselbe Auflösung haben, damit drawImage 1:1 kopiert
+     * und keine bilineare Interpolation (Unschärfe) entsteht.
+     * Bei viewScale-Änderung muss der Cache invalidiert werden.
      */
     private get _effectiveDpr(): number {
         return (window.devicePixelRatio || 1) * (this.context.viewScale || 1);
@@ -788,27 +780,25 @@ export class DrawingManager {
             : (getComputedStyle(document.body).getPropertyValue('--background-primary').trim() || (isDark ? '#1a1a1a' : '#ffffff'));
 
         let cache = this._strokeCache.get(block.id);
-        // Cache-Größe in DPR-Pixeln (nicht viewScale) — viewScale wird erst beim drawImage angewendet
-        const cacheDpr = this._cacheDpr;
+        // Cache-Größe muss mit effectiveDpr übereinstimmen — bei viewScale-Änderung
+        // wird der Cache von resizeAllCanvasesForViewScale() invalidiert.
+        const effectiveDpr = this._effectiveDpr;
         const needsRebuild = !cache
-            || cache.width !== block.bbox.width * cacheDpr
-            || cache.height !== block.bbox.height * cacheDpr;
+            || cache.width !== block.bbox.width * effectiveDpr
+            || cache.height !== block.bbox.height * effectiveDpr;
 
         if (needsRebuild) {
             cache = document.createElement('canvas');
-            cache.width = block.bbox.width * cacheDpr;    // DPR-Auflösung, kein viewScale
-            cache.height = block.bbox.height * cacheDpr;
+            cache.width = block.bbox.width * effectiveDpr;
+            cache.height = block.bbox.height * effectiveDpr;
             this._strokeCache.set(block.id, cache);
             this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
         }
 
-        // Expliziter Transform: DPR × viewScale → Canvas-Backing ist bbox × effectiveDpr groß
-        const effectiveDpr = this._effectiveDpr;
+        // setTransform mit effectiveDpr: logische Koordinaten → physische Canvas-Pixel.
+        // Cache (effectiveDpr-Pixel) → drawImage mit logischer Zielgröße → 1:1-Kopie, keine Interpolation.
         ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
         ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
-        // Zielgröße in logischen Koordinaten angeben → Transform skaliert korrekt
-        // Cache (DPR-Pixel) → Canvas (effectiveDpr-Pixel): viewScale-facher Upscale, aber
-        // der Cache hat bereits DPR-Qualität, also maximal 1 Gerätepixel = 1 Cache-Pixel
         if (cache) ctx.drawImage(cache, 0, 0, block.bbox.width, block.bbox.height);
 
         if (this.isDrawing && this.currentStroke.length >= 1) {
@@ -874,15 +864,14 @@ export class DrawingManager {
         const ctx = cache.getContext('2d');
         if (!ctx) return;
 
-        const dpr = this._cacheDpr;
+        const dpr = this._effectiveDpr;
 
         // Hintergrund in physischen Pixeln füllen (vor dem Scale)
         ctx.clearRect(0, 0, cache.width, cache.height);
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, cache.width, cache.height);
 
-        // DPR-Transform setzen: Striche werden in logischen Koordinaten gezeichnet,
-        // aber mit voller Gerätepixel-Auflösung gerendert → scharfe Bézier-Kurven
+        // effectiveDpr-Transform: Striche in logischen Koordinaten → volle Pixelauflösung
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         this.drawGrid(cache, block);
@@ -945,8 +934,8 @@ export class DrawingManager {
         const ctx = cache.getContext('2d');
         if (!ctx) return;
 
-        // DPR-Transform explizit setzen (konsistent mit _renderStrokesToCache)
-        ctx.setTransform(this._cacheDpr, 0, 0, this._cacheDpr, 0, 0);
+        // effectiveDpr-Transform explizit setzen (konsistent mit _renderStrokesToCache)
+        ctx.setTransform(this._effectiveDpr, 0, 0, this._effectiveDpr, 0, 0);
 
         const ds = this.getBlockDisplaySettings(block);
         const displayStyle = this.context.styleManager.getCalculatedStrokeStyle(
@@ -1022,14 +1011,13 @@ export class DrawingManager {
             block.bbox.height += amount;
         }
 
-        const dpr = window.devicePixelRatio || 1;
         const effectiveDpr = this._effectiveDpr;
 
-        // Cache in DPR-Größe erweitern, Inhalt kopieren
+        // Cache in effectiveDpr-Größe erweitern, Inhalt kopieren
         const oldCache = this._strokeCache.get(block.id);
         const newCache = document.createElement('canvas');
-        newCache.width = block.bbox.width * dpr;    // DPR-Auflösung (kein viewScale)
-        newCache.height = block.bbox.height * dpr;
+        newCache.width = block.bbox.width * effectiveDpr;
+        newCache.height = block.bbox.height * effectiveDpr;
         const cCtx = newCache.getContext('2d');
         if (cCtx) {
             const ds = this.getBlockDisplaySettings(block);
@@ -1040,10 +1028,10 @@ export class DrawingManager {
             // 1. Hintergrund in physischen Pixeln (vor Transform)
             cCtx.fillStyle = bgColor;
             cCtx.fillRect(0, 0, newCache.width, newCache.height);
-            // 2. Alten Cache 1:1 kopieren (beide DPR-skaliert)
+            // 2. Alten Cache 1:1 kopieren (beide effectiveDpr-skaliert)
             if (oldCache) cCtx.drawImage(oldCache, 0, 0);
-            // 3. DPR-Transform für spätere inkrementelle Striche setzen
-            cCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            // 3. effectiveDpr-Transform für spätere inkrementelle Striche setzen
+            cCtx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
         }
         this._strokeCache.set(block.id, newCache);
 
@@ -1055,7 +1043,7 @@ export class DrawingManager {
             ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            // Cache in logischen Koordinaten zeichnen → Transform skaliert auf Canvas
+            // Cache in logischen Koordinaten zeichnen → 1:1-Kopie, keine Interpolation
             ctx.drawImage(newCache, 0, 0, block.bbox.width, block.bbox.height);
             // Aktuell gezeichneten Stroke wiederherstellen (liegt nicht im Cache)
             if (this.isDrawing && this.currentStroke.length >= 2) {
@@ -1623,11 +1611,13 @@ export class DrawingManager {
             const block = this.context.blocks.find(b => b.id === blockId);
             if (!block) return;
 
-            // Canvas auf neue Größe bringen (löscht den Canvas-Inhalt)
+            // Canvas auf neue Größe bringen
             canvas.width  = block.bbox.width  * effectiveDpr;
             canvas.height = block.bbox.height * effectiveDpr;
 
-            // Cache ist noch gültig → sofort neu zeichnen ohne Rebuild
+            // Cache invalidieren: er hat noch alte effectiveDpr-Auflösung →
+            // _drawBlockStrokesImmediate baut ihn mit neuer Auflösung neu auf
+            this.invalidateBlockCache(blockId);
             this._drawBlockStrokesImmediate(canvas, block);
         });
     }
@@ -1796,17 +1786,15 @@ export class DrawingManager {
                 || (isDark ? '#1a1a1a' : '#ffffff'))
             : (ds.backgroundColor ?? '#ffffff');
 
-        // Cache in DPR-Auflösung (viewScale-unabhängig) — konsistent mit _drawBlockStrokesImmediate
-        const cacheDpr = this._cacheDpr;
+        // Cache in effectiveDpr-Auflösung — identisch mit _drawBlockStrokesImmediate
+        const effectiveDpr = this._effectiveDpr;
         const cache = document.createElement('canvas');
-        cache.width = block.bbox.width * cacheDpr;
-        cache.height = block.bbox.height * cacheDpr;
+        cache.width = block.bbox.width * effectiveDpr;
+        cache.height = block.bbox.height * effectiveDpr;
         this._strokeCache.set(block.id, cache);
 
         this._renderStrokesToCache(cache, block, ds, bgColor, isDark);
 
-        // Expliziter Transform: effectiveDpr = DPR × viewScale
-        const effectiveDpr = this._effectiveDpr;
         ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
         ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
         ctx.drawImage(cache, 0, 0, block.bbox.width, block.bbox.height);
