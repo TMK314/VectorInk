@@ -100,18 +100,27 @@ export class InkView extends FileView {
 
         this.toolbarManager.createToolbar(main);
 
-        // Äußerer Scroll-Wrapper
+        // Äußerer Scroll-Wrapper – nur overflow, kein Flex
         const scrollWrapper = document.createElement('div');
-        scrollWrapper.style.cssText = 'flex:1;overflow:auto;background:var(--background-primary);';
+        scrollWrapper.style.cssText =
+            'flex:1;overflow:auto;background:var(--background-primary);';
         main.appendChild(scrollWrapper);
 
-        // Innerer zentrierter Container – hier landen alle Block-Elemente
+        // Mittlerer Centering-Wrapper – min-width:max-content zwingt den scrollbaren
+        // Bereich, die volle gezoomte Breite zu kennen → linke Seite bleibt erreichbar.
+        // display:flex + justify-content:center zentriert den Inhalt.
+        const centeringWrapper = document.createElement('div');
+        centeringWrapper.style.cssText =
+            'min-width:max-content;display:flex;justify-content:center;';
+        scrollWrapper.appendChild(centeringWrapper);
+
+        // Innerer Container – feste Breite, kein margin:auto nötig
         this.blocksContainer = document.createElement('div');
         this.blocksContainer.style.cssText =
-            'max-width:880px;margin:0 auto;padding:24px 20px;' +
+            'width:880px;flex-shrink:0;padding:24px 20px;' +
             'display:flex;flex-direction:column;align-items:center;';
         this.blocksContainer.style.zoom = String(this.viewScale);
-        scrollWrapper.appendChild(this.blocksContainer);
+        centeringWrapper.appendChild(this.blocksContainer);
 
         if (this.document) {
             this.blocks = [...this.document.blocks].sort((a, b) => a.order - b.order);

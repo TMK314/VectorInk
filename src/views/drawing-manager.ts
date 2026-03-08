@@ -769,7 +769,6 @@ export class DrawingManager {
             this._rafBlock = block;
             if (!this._rafPending) {
                 this._rafPending = true;
-                this._perf.rafExecuted++;
                 requestAnimationFrame(() => {
                     this._rafPending = false;
                     // Nicht rendern wenn aktiv gezeichnet wird — draw() schreibt direkt auf den Canvas.
@@ -777,15 +776,12 @@ export class DrawingManager {
                     if (this._rafCanvas && this._rafBlock && !this.isDrawing) {
                         this._drawBlockStrokesImmediate(this._rafCanvas, this._rafBlock);
                     }
-                    this._perf.report();
                 });
             } else {
-                this._perf.rafSkipped++;
             }
             return;
         }
         this._drawBlockStrokesImmediate(canvas, block);
-        this._perf.report();
     }
 
     private _drawBlockStrokesImmediate(canvas: HTMLCanvasElement, block: Block): void {
@@ -793,7 +789,6 @@ export class DrawingManager {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const t0 = this._perf.beginDraw(block.strokeIds.length);
         const ds = this.getBlockDisplaySettings(block);
         const isDark = this.context.styleManager.isDarkTheme();
         const bgColor = ds.useColor
@@ -844,8 +839,6 @@ export class DrawingManager {
         }
 
         this.context.strokeSelectionManager.drawSelectionHighlights(canvas, block);
-        this._perf.endDraw(t0);
-        this._perf.report();
     }
 
     private simplifyStroke(points: Point[], epsilon: number): { points: Point[], bezierCurves: CubicBezier[] } {
@@ -1732,64 +1725,6 @@ export class DrawingManager {
             }
         }
     }
-
-    /** DEbug
-     * ----------------------------------
-     */
-    private _perf = {
-        frameCount: 0,
-        drawCallsThisFrame: 0,
-        lastReport: 0,
-        drawDurations: [] as number[],
-        strokeCounts: [] as number[],
-        rafSkipped: 0,
-        rafExecuted: 0,
-
-        /** Aufruf am Anfang jedes _drawBlockStrokesImmediate */
-        beginDraw(strokeCount: number) {
-            this.drawCallsThisFrame++;
-            this.strokeCounts.push(strokeCount);
-            return performance.now();
-        },
-
-        /** Aufruf am Ende von _drawBlockStrokesImmediate */
-        endDraw(start: number) {
-            this.drawDurations.push(performance.now() - start);
-        },
-
-        /** Jede Sekunde einen Report loggen */
-        report() {
-            const now = performance.now();
-            if (now - this.lastReport < 1000) return;
-            this.lastReport = now;
-
-            const avgDraw = this.drawDurations.length
-                ? (this.drawDurations.reduce((a, b) => a + b, 0) / this.drawDurations.length).toFixed(2)
-                : '—';
-            const maxDraw = this.drawDurations.length
-                ? Math.max(...this.drawDurations).toFixed(2)
-                : '—';
-            const avgStrokes = this.strokeCounts.length
-                ? (this.strokeCounts.reduce((a, b) => a + b, 0) / this.strokeCounts.length).toFixed(1)
-                : '—';
-            const maxStrokes = this.strokeCounts.length
-                ? Math.max(...this.strokeCounts)
-                : '—';
-
-            console.group('%c[InkPerf] 1s report', 'color: #4af; font-weight: bold');
-            console.log(`draws/s:       ${this.drawDurations.length}  (RAF skipped: ${this.rafSkipped}, executed: ${this.rafExecuted})`);
-            console.log(`draw ms:       avg=${avgDraw}ms  max=${maxDraw}ms`);
-            console.log(`strokes/draw:  avg=${avgStrokes}  max=${maxStrokes}`);
-            console.groupEnd();
-
-            // Reset
-            this.drawDurations = [];
-            this.strokeCounts = [];
-            this.drawCallsThisFrame = 0;
-            this.rafSkipped = 0;
-            this.rafExecuted = 0;
-        }
-    };
 
     /**
  * Rendert einen Block sofort synchron auf den Canvas – ohne RAF/Idle-Deferral.
