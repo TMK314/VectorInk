@@ -108,9 +108,6 @@ export class ToolbarManager {
             () => this.context.drawingManager.setTool('selection'));
         this.toolbar.appendChild(this.selectBtn);
 
-        // Initial highlight
-        this.highlightToolBtn(activeTool);
-
         // 3a ── Pen properties ─────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.penPropsSection = this.buildPenProps(block);
@@ -561,7 +558,6 @@ export class ToolbarManager {
      * Wird von DrawingManager.setTool() aufgerufen.
      */
     public syncToolbarToTool(tool: 'pen' | 'eraser' | 'selection'): void {
-        this.highlightToolBtn(tool);
         if (this.penPropsSection)
             this.penPropsSection.style.display       = tool === 'pen' || tool === 'selection'       ? 'flex' : 'none';
         if (this.selectionPropsSection)
@@ -640,18 +636,6 @@ export class ToolbarManager {
     // ════════════════════════════════════════════════════════════════════════
     //  Hilfsmethoden
     // ════════════════════════════════════════════════════════════════════════
-
-    private highlightToolBtn(tool: 'pen' | 'eraser' | 'selection'): void {
-        for (const [b, key] of [
-            [this.penBtn, 'pen'], [this.eraserBtn, 'eraser'], [this.selectBtn, 'selection']
-        ] as const) {
-            if (!b) continue;
-            const active = tool === key;
-            b.style.background = active ? 'var(--interactive-accent)' : 'var(--background-primary)';
-            b.style.color      = active ? 'var(--text-on-accent)'     : 'var(--text-normal)';
-            b.style.borderColor = active ? 'var(--interactive-accent)' : 'var(--background-modifier-border)';
-        }
-    }
 
     private row(): HTMLElement {
         const el = document.createElement('div');

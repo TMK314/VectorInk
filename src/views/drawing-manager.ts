@@ -995,8 +995,8 @@ export class DrawingManager {
     }
 
     private expandBlockIfNeeded(canvas: HTMLCanvasElement, block: Block, point: Point): void {
-        const padding = 60; // Weniger Padding für präzisere Kontrolle
-        const threshold = 30; // Niedrigerer Schwellenwert
+        const padding = 120;
+        const threshold = 75;
 
         // Prüfe nach unten
         if (point.y > block.bbox.height - threshold) {

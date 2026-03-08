@@ -1,90 +1,171 @@
-# Obsidian Sample Plugin
+# VectorInk — Handwriting Plugin for Obsidian
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+VectorInk lets you create and edit handwritten notes directly inside Obsidian. Drawings are stored as vector data (Bézier curves) in `.ink` files, keeping them resolution-independent and compact. Notes can be embedded inline in any Markdown file and exported to SVG or PNG.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+---
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Creating Ink Notes
 
-## First time developing plugins?
+There are three ways to create a new `.ink` file:
 
-Quick starting guide for new plugin devs:
+- Click the **pencil icon** in the left ribbon.
+- Run the command **Create Ink Note** from the Command Palette (`Ctrl/Cmd + P`).
+- Create a file manually with the `.ink` extension — Obsidian will open it in the ink editor automatically.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+---
 
-## Releasing new releases
+## The Editor
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+The editor consists of a **toolbar** at the top and a scrollable **canvas area** below. Each document is made up of one or more *blocks*, each with its own canvas.
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+### Tools
 
-## Adding your plugin to the community plugin list
+Three tools are available, selectable via the toolbar or keyboard shortcuts:
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+| Tool | Shortcut | Description |
+|---|---|---|
+| ✏️ Pen | `Ctrl+P` | Draw strokes on the canvas |
+| 🧽 Eraser | `Ctrl+E` | Remove strokes by touching them |
+| ↖️ Selection | — | Select, move, copy, and delete strokes |
 
-## How to use
+### Pen Properties
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+When the pen or selection tool is active, the following controls appear in the toolbar:
 
-## Manually installing the plugin
+- **Color** — stroke color (color picker)
+- **Opacity** — stroke transparency (0–100%)
+- **Width** — base stroke width in logical pixels (1–20)
+- **Format** — semantic style applied to the stroke:
+  - `N` Normal
+  - `B` Bold
+  - `I` Italic
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+Pen settings apply to all new strokes. When strokes are selected, changing these properties immediately restyles the selection.
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+### Blocks
 
-## Funding URL
+A document is divided into blocks — independent drawing areas stacked vertically. Each block has its own canvas, display settings, and resizable height.
 
-You can include funding URLs where people who use your plugin can financially support it.
+**Block types** available:
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+| Type | Description |
+| ---|---|
+| `paragraph` | General freehand writing area |
+| `heading1` – `heading5` | Heading levels (add a separator line below by default) |
+| `quote` | Quote block (adds a left bar decoration by default) |
+| `math` | Mathematical content area |
+| `drawing` | General illustration area |
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+**Adding blocks:** Click **＋ Block** in the toolbar to append a new block. Within the canvas area, a **(+)** button appears between blocks to insert one at a specific position.
+
+**Reordering blocks:** Each block has **▲ / ▼** buttons to move it up or down.
+
+**Clearing blocks:** Each block has a **🗑** clear button.
+
+**Delating blocks:** Each block has a **X** delate button.
+
+New blocks inherit the currently active toolbar settings (stroke weight, grid, color mode, etc.).
+
+### Block Settings
+
+Each block has independent display settings, editable from the toolbar when that block is selected:
+
+- **Colors** (checkbox) — when enabled, strokes render in their saved colors. When disabled, all strokes render in a single neutral color, making the note style-agnostic for embed previews.
+- **BG** — background color of the block canvas (only visible when Colors is off).
+- **Grid** — optional background grid overlay with the following options:
+  - Enable/disable toggle
+  - Type: `Grid` (crosshatch), `Lines` (horizontal only), `Dots`
+  - Size (cell size in logical pixels)
+  - Opacity
+  - Color
+  - Line width
+
+#### Decorations
+
+For heading and quote blocks, additional decoration toggles appear:
+
+- **─ Separator** (headings) — renders a horizontal rule below the block in embed previews.
+- **❝ Quote bar** (quotes) — renders a left vertical bar and indent in embed previews.
+
+### Stroke Weight
+
+The **Stroke weight** slider scales all stroke widths in the selected block(s) uniformly. This is non-destructive: the original stroke widths are preserved in the data; the multiplier is applied at render time. Useful for adjusting visual weight without redrawing.
+
+### View Zoom
+
+The **View** slider scales the entire editor canvas for comfortable writing.
+
+### Smoothing
+
+The **Smoothing** slider controls the Bézier fitting epsilon (0.0 – 5.0). Lower values produce curves that closely follow raw input points and require more storage space; higher values produce smoother, more generalized curves that require less storage space.
+
+---
+
+## Selection & Editing
+
+Switch to the **Selection tool** to interact with existing strokes.
+
+---
+
+## Undo & Redo
+
+All drawing and editing actions are undoable. The history is per-session (up to 100 steps) and is cleared when switching to a different file.
+
+| Action | Toolbar | Shortcut |
+|---|---|---|
+| Undo | ↩ | `Ctrl+Z` |
+| Redo | ↪ | `Ctrl+Y` or `Ctrl+Shift+Z` |
+
+Actions tracked by history:
+
+- Drawing a stroke
+- Erasing strokes
+- Deleting selected strokes
+- Pasting strokes
+- Moving strokes
+- Restyling strokes
+- Changing block display settings (color mode, background)
+
+---
+
+## Embedding in Markdown
+
+`.ink` files can be embedded in any Markdown note using Obsidian's standard embed syntax:
+
+```
+![[my-note.ink]]
 ```
 
-If you have multiple URLs, you can also do:
+The embed renders as an SVG preview in both Reading Mode and Live Preview.
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+---
 
-## API Documentation
+## Export
 
-See https://docs.obsidian.md
+The toolbar provides two export options that save files alongside the `.ink` source:
+
+- **↓ SVG** — exports a vector SVG file. All blocks are combined into a single image. File path: same folder as the `.ink` file, with `.svg` extension.
+- **↓ PNG** — exports a rasterized PNG at 2× resolution. File path: same folder, `.png` extension.
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+P` | Switch to Pen tool |
+| `Ctrl+E` | Switch to Eraser tool |
+| `Escape` | Switch to Selection tool / clear selection |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
+| `Ctrl+S` | Save |
+| `Ctrl+A` | Select all strokes in current block |
+| `Ctrl+C` | Copy selected strokes |
+| `Ctrl+V` | Paste strokes |
+| `Del` | Delete selected strokes |
+
+---
+
+## Buy me a coffee
+
+Feel free to support my work: https://buymeacoffee.com/theodorkaiser

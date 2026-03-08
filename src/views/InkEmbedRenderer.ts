@@ -398,7 +398,6 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             path.setAttribute('fill', 'none');
             path.setAttribute('stroke', gridColor);
             path.setAttribute('stroke-width', String(grid.lineWidth ?? 0.5));
-            console.log('stroke-width: ', String(grid.lineWidth ?? 0.5));
             path.setAttribute('opacity', String(grid.opacity));
             pat.appendChild(path);
         }

@@ -3,9 +3,9 @@
 	"name": "VectorInk",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Handwrite in a vector graphic and digitalize.",
-	"author": "Theodor Markus Kaiser",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+	"description": "Create handwritten notes as vector graphics. Each stroke is saved as a Bézier curve, with customizable background and pen colors for infinite scalability.",
+	"author": "Theodor Markus Kaiser",	
+    "fundingUrl": "https://www.buymeacoffee.com/TheodorKaiser",
+	"authorUrl": "https://github.com/TMK314",
+	"isDesktopOnly": true
 }

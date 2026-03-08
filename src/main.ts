@@ -1,13 +1,10 @@
 import { Plugin, Notice, WorkspaceLeaf, TFile, MarkdownPostProcessorContext, MarkdownRenderChild } from 'obsidian';
 import { InkView, INK_VIEW_TYPE } from './views/InkView';
-import { VectorInkSettings, DEFAULT_SETTINGS, VectorInkSettingTab } from './settings';
+import { VectorInkSettingTab } from './settings';
 import { InkEmbedRenderer } from './views/InkEmbedRenderer';
 
 export default class VectorInkPlugin extends Plugin {
-	settings!: VectorInkSettings;
 	async onload() {
-		console.log('🔧 Loading Vector Ink Plugin');
-
 		await this.loadSettings();
 
 		this.registerView(
@@ -57,8 +54,6 @@ export default class VectorInkPlugin extends Plugin {
 			name: 'Create Ink Note',
 			callback: () => this.createInkNote()
 		});
-
-		console.log('✅ Vector Ink Plugin loaded');
 	}
 
 	async createInkNote() {
@@ -73,8 +68,6 @@ export default class VectorInkPlugin extends Plugin {
 				do { filename = `${dateStr} ${n}.ink`; n++; }
 				while (this.app.vault.getAbstractFileByPath(filename));
 			}
-
-			console.log('📝 Creating ink note:', filename);
 
 			const initialBlock = {
 				id: crypto.randomUUID(),
@@ -125,7 +118,6 @@ export default class VectorInkPlugin extends Plugin {
 			const leaf = this.app.workspace.getLeaf(true);
 			await leaf.openFile(file);
 
-			console.log('✅ Created ink note:', filename);
 			new Notice(`Created ink note: ${filename}`);
 
 		} catch (error) {
@@ -168,19 +160,12 @@ export default class VectorInkPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			await this.loadData()
-		);
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
 	}
 
 	onunload() {
 		(this.app as any).embedRegistry.unregisterEmbedCreator('ink');
-		console.log('Unloading Vector Ink Plugin');
 	}
 }

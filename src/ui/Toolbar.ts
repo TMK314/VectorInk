@@ -129,18 +129,6 @@ export class Toolbar {
         this.toolbarEl.appendChild(button);
     }
 
-    private async digitalize(): Promise<void> {
-        try {
-            console.log('Starting digitalization...');
-            // Check if the view has digitizeDocument method
-            if (typeof (this.view as any).digitizeDocument === 'function') {
-                await (this.view as any).digitizeDocument();
-            }
-        } catch (error) {
-            console.error('Digitalization error:', error);
-        }
-    }
-
     private clearCanvas(): void {
         if (confirm('Clear all ink?')) {
             // Check if the view has clearCanvas method

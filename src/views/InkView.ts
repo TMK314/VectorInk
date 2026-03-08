@@ -250,7 +250,6 @@ export class InkView extends FileView {
 
     // Wird von Obsidian aufgerufen bevor die Datei gewechselt wird (auch zwischen Ink-Dateien)
     async onUnloadFile(file: TFile): Promise<void> {
-        console.log('🔄 Unloading file:', file.path);
         if (this.document && this.file) {
             await this.saveDocument(true);
         }
@@ -258,8 +257,6 @@ export class InkView extends FileView {
 
     // WICHTIG: Diese Methode wird von Obsidian aufgerufen, wenn die Datei gewechselt wird
     async onLoadFile(file: TFile): Promise<void> {
-        console.log('🔄 Loading file:', file.path);
-
         // Datei wechseln
         this.file = file;
 
@@ -316,8 +313,6 @@ export class InkView extends FileView {
         }
 
         try {
-            console.log('💾 Saving document...');
-
             const docData = this.document.getData();
 
             // Blocks synchronisieren
@@ -344,7 +339,6 @@ export class InkView extends FileView {
 
             await this.app.vault.modify(this.file, serialized);
 
-            console.log('✅ Document saved successfully');
             if (!silent) new Notice('Document saved');
 
         } catch (error) {
