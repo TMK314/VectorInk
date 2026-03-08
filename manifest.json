@@ -1,8 +1,8 @@
 {
-	"id": "VectorInk",
+	"id": "vector-ink",
 	"name": "VectorInk",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
+	"minAppVersion": "1.0.0",
 	"description": "Create handwritten notes as vector graphics. Each stroke is saved as a Bézier curve, with customizable background and pen colors for infinite scalability.",
 	"author": "Theodor Markus Kaiser",	
     "fundingUrl": "https://www.buymeacoffee.com/TheodorKaiser",
