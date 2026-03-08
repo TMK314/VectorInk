@@ -244,6 +244,7 @@ export class DrawingManager {
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.stroke();
+            ctx.globalAlpha = 1;
 
             lastPoint = point;
             this.checkAutoExpand(canvas, point);
@@ -814,6 +815,7 @@ export class DrawingManager {
         // setTransform mit effectiveDpr: logische Koordinaten → physische Canvas-Pixel.
         // Cache (effectiveDpr-Pixel) → drawImage mit logischer Zielgröße → 1:1-Kopie, keine Interpolation.
         ctx.setTransform(effectiveDpr, 0, 0, effectiveDpr, 0, 0);
+        ctx.globalAlpha = 1;
         ctx.clearRect(0, 0, block.bbox.width, block.bbox.height);
         if (cache) ctx.drawImage(cache, 0, 0, block.bbox.width, block.bbox.height);
 

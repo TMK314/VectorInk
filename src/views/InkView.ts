@@ -135,108 +135,64 @@ export class InkView extends FileView {
     }
 
     private setupEventListeners(): void {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (!this.contentEl.contains(document.activeElement)) return;
-
-            const currentBlock = this.blocks[this.currentBlockIndex];
-
-            // Undo / Redo
-            if (e.ctrlKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
-                this.historyManager.undo();
-                e.preventDefault();
-                return;
-            }
-            if ((e.ctrlKey && e.shiftKey && (e.key === 'z' || e.key === 'Z')) ||
-                (e.ctrlKey && (e.key === 'y' || e.key === 'Y'))) {
-                this.historyManager.redo();
-                e.preventDefault();
-                return;
-            }
-
-            // Handle stroke manipulation shortcuts
+        if (!this.scope) return;
+        // Obsidian Scope – feuert nur wenn diese View aktiv ist
+        this.scope.register(['Mod'], 'z', () => {
+            this.historyManager.undo();
+            return false;
+        });
+        this.scope.register(['Mod', 'Shift'], 'z', () => {
+            this.historyManager.redo();
+            return false;
+        });
+        this.scope.register(['Mod'], 'y', () => {
+            this.historyManager.redo();
+            return false;
+        });
+        this.scope.register(['Mod'], 's', () => {
+            this.saveDocument();
+            return false;
+        });
+        this.scope.register(['Mod'], 'p', () => {
+            this.drawingManager.setTool('pen');
+            return false;
+        });
+        this.scope.register(['Mod'], 'e', () => {
+            this.drawingManager.setTool('eraser');
+            return false;
+        });
+        this.scope.register([], 'Escape', () => {
+            this.drawingManager.setTool('selection');
+            return false;
+        });
+        this.scope.register([], 'Delete', () => {
+            if (this.drawingManager.currentTool === 'selection')
+                this.strokeSelectionManager.deleteSelectedStrokes();
+            return false;
+        });
+        this.scope.register(['Mod'], 'c', () => {
+            if (this.drawingManager.currentTool === 'selection')
+                this.strokeSelectionManager.copySelectedStrokes();
+            return false;
+        });
+        this.scope.register(['Mod'], 'v', () => {
+            if (this.drawingManager.currentTool === 'selection')
+                this.strokeSelectionManager.pasteStrokes(this.currentBlockIndex);
+            return false;
+        });
+        this.scope.register(['Mod'], 'a', () => {
             if (this.drawingManager.currentTool === 'selection') {
-                switch (e.key) {
-                    case 'Delete':
-                        this.strokeSelectionManager.deleteSelectedStrokes();
-                        e.preventDefault();
-                        return;
-
-                    case 'c':
-                    case 'C':
-                        if (e.ctrlKey) {
-                            this.strokeSelectionManager.copySelectedStrokes();
-                            e.preventDefault();
-                            return;
-                        }
-                        break;
-
-                    case 'v':
-                    case 'V':
-                        if (e.ctrlKey) {
-                            this.strokeSelectionManager.pasteStrokes(this.currentBlockIndex);
-                            e.preventDefault();
-                            return;
-                        }
-                        break;
-
-                    case 'a':
-                    case 'A':
-                        if (e.ctrlKey) {
-                            // Select all strokes in current block
-                            const block = this.blocks[this.currentBlockIndex];
-                            if (block) {
-                                this.strokeSelectionManager.selectedStrokes.clear();
-                                block.strokeIds.forEach(id => {
-                                    this.strokeSelectionManager.selectedStrokes.add(id);
-                                });
-                                this.blockManager.renderBlocks();
-                            }
-                            e.preventDefault();
-                            return;
-                        }
-                        break;
-
-                    case 'Escape':
-                        this.strokeSelectionManager.clearSelection();
-                        this.blockManager.renderBlocks();
-                        e.preventDefault();
-                        return;
+                const block = this.blocks[this.currentBlockIndex];
+                if (block) {
+                    this.strokeSelectionManager.selectedStrokes.clear();
+                    block.strokeIds.forEach(id => this.strokeSelectionManager.selectedStrokes.add(id));
+                    this.blockManager.renderBlocks();
                 }
             }
+            return false;
+        });
 
-            // Handle table and other shortcuts
-            switch (e.key) {
-                case 'Escape':
-                    this.drawingManager.setTool('selection');
-                    break;
-                case 'p':
-                case 'P':
-                    if (e.ctrlKey) {
-                        this.drawingManager.setTool('pen');
-                        e.preventDefault();
-                    }
-                    break;
-
-                case 'e':
-                case 'E':
-                    if (e.ctrlKey) {
-                        this.drawingManager.setTool('eraser');
-                        e.preventDefault();
-                    }
-                    break;
-
-                case 's':
-                case 'S':
-                    if (e.ctrlKey) {
-                        this.saveDocument();
-                        e.preventDefault();
-                    }
-                    break;
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-
+        // Resize bleibt als window-Listener
         window.addEventListener('resize', () => {
             if (!this.blocksContainer) return;
             this.blocks.forEach(block => {
@@ -244,8 +200,6 @@ export class InkView extends FileView {
                 if (canvas) this.drawingManager.updateBlockCanvasSize(block, canvas);
             });
         });
-
-        (this as any)._handleKeyDown = handleKeyDown;
     }
 
     // Wird von Obsidian aufgerufen bevor die Datei gewechselt wird (auch zwischen Ink-Dateien)
