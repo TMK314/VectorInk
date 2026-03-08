@@ -24,17 +24,17 @@ Three tools are available, selectable via the toolbar or keyboard shortcuts:
 
 | Tool | Shortcut | Description |
 |---|---|---|
-| ✏️ Pen | `Ctrl+P` | Draw strokes on the canvas |
-| 🧽 Eraser | `Ctrl+E` | Remove strokes by touching them |
-| ↖️ Selection | — | Select, move, copy, and delete strokes |
+| ✏️ Pen | `P` | Draw strokes on the canvas |
+| 🧽 Eraser | `E` | Remove strokes by touching them |
+| ↖️ Selection | `Esc` | Select, move, copy, and delete strokes |
 
 ### Pen Properties
 
 When the pen or selection tool is active, the following controls appear in the toolbar:
 
 - **Color** — stroke color (color picker)
-- **Opacity** — stroke transparency (0–100%)
-- **Width** — base stroke width in logical pixels (1–20)
+- **Opacity** — stroke transparency
+- **Width** — base stroke width in logical pixels
 - **Format** — semantic style applied to the stroke:
   - `N` Normal
   - `B` Bold
@@ -153,9 +153,12 @@ The toolbar provides two export options that save files alongside the `.ink` sou
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+P` | Switch to Pen tool |
-| `Ctrl+E` | Switch to Eraser tool |
+| `P` | Switch to Pen tool |
+| `E` | Switch to Eraser tool |
 | `Escape` | Switch to Selection tool / clear selection |
+| `N` | Switch to normal formating |
+| `B` | Switch to bold formating |
+| `i` | Switch to italic formating |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
 | `Ctrl+S` | Save |

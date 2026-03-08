@@ -67,11 +67,6 @@ export class InkView extends FileView {
             console.error('Failed to save on close:', error);
         }
 
-        const handleKeyDown = (this as any)._handleKeyDown;
-        if (handleKeyDown) {
-            document.removeEventListener('keydown', handleKeyDown);
-        }
-
         // Cleanup theme observer
         const themeObserver = (this as any)._themeObserver;
         if (themeObserver) {
@@ -135,64 +130,86 @@ export class InkView extends FileView {
     }
 
     private setupEventListeners(): void {
-        if (!this.scope) return;
-        // Obsidian Scope – feuert nur wenn diese View aktiv ist
-        this.scope.register(['Mod'], 'z', () => {
-            this.historyManager.undo();
-            return false;
-        });
-        this.scope.register(['Mod', 'Shift'], 'z', () => {
-            this.historyManager.redo();
-            return false;
-        });
-        this.scope.register(['Mod'], 'y', () => {
-            this.historyManager.redo();
-            return false;
-        });
-        this.scope.register(['Mod'], 's', () => {
-            this.saveDocument();
-            return false;
-        });
-        this.scope.register(['Mod'], 'p', () => {
-            this.drawingManager.setTool('pen');
-            return false;
-        });
-        this.scope.register(['Mod'], 'e', () => {
-            this.drawingManager.setTool('eraser');
-            return false;
-        });
-        this.scope.register([], 'Escape', () => {
-            this.drawingManager.setTool('selection');
-            return false;
-        });
-        this.scope.register([], 'Delete', () => {
-            if (this.drawingManager.currentTool === 'selection')
-                this.strokeSelectionManager.deleteSelectedStrokes();
-            return false;
-        });
-        this.scope.register(['Mod'], 'c', () => {
-            if (this.drawingManager.currentTool === 'selection')
-                this.strokeSelectionManager.copySelectedStrokes();
-            return false;
-        });
-        this.scope.register(['Mod'], 'v', () => {
-            if (this.drawingManager.currentTool === 'selection')
-                this.strokeSelectionManager.pasteStrokes(this.currentBlockIndex);
-            return false;
-        });
-        this.scope.register(['Mod'], 'a', () => {
-            if (this.drawingManager.currentTool === 'selection') {
-                const block = this.blocks[this.currentBlockIndex];
-                if (block) {
-                    this.strokeSelectionManager.selectedStrokes.clear();
-                    block.strokeIds.forEach(id => this.strokeSelectionManager.selectedStrokes.add(id));
-                    this.blockManager.renderBlocks();
+        const isActive = () => this.app.workspace.activeLeaf === this.leaf;
+
+        this.registerDomEvent(document, 'keydown', (e: KeyboardEvent) => {
+            if (!isActive()) return;
+            // Kein Shortcut wenn ein Input/Select/Textarea fokussiert ist (z.B. Toolbar-Felder)
+            const tag = (document.activeElement as HTMLElement)?.tagName;
+            if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+            const mod = e.ctrlKey || e.metaKey;
+
+            // ── Undo / Redo ────────────────────────────────────────────────────
+            if (mod && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+                this.historyManager.undo(); e.preventDefault(); return;
+            }
+            if ((mod && e.shiftKey && (e.key === 'z' || e.key === 'Z')) ||
+                (mod && (e.key === 'y' || e.key === 'Y'))) {
+                this.historyManager.redo(); e.preventDefault(); return;
+            }
+
+            // ── Save ───────────────────────────────────────────────────────────
+            if (mod && (e.key === 's' || e.key === 'S')) {
+                this.saveDocument(); e.preventDefault(); return;
+            }
+
+            // ── Tool-Wechsel (bare keys, kein Modifier) ────────────────────────
+            if (!mod && !e.shiftKey && !e.altKey) {
+                switch (e.key) {
+                    case 'p': case 'P':
+                        this.drawingManager.setTool('pen'); e.preventDefault(); return;
+                    case 'e': case 'E':
+                        this.drawingManager.setTool('eraser'); e.preventDefault(); return;
+                    case 'v': case 'V':
+                        this.drawingManager.setTool('selection'); e.preventDefault(); return;
+                    case 'Escape':
+                        this.drawingManager.setTool('selection'); e.preventDefault(); return;
                 }
             }
-            return false;
+
+            // ── Format-Shortcuts (bare keys, nur wenn Pen aktiv) ───────────────
+            if (!mod && !e.shiftKey && !e.altKey &&
+                this.drawingManager.currentTool === 'pen') {
+                const setSemantic = (s: 'normal' | 'bold' | 'italic' ) => {
+                    this.drawingManager.currentPenStyle.semantic = s;
+                    this.toolbarManager?.syncSemanticToToolbar(s);
+                    e.preventDefault();
+                };
+                switch (e.key) {
+                    case 'n': case 'N': setSemantic('normal'); return;
+                    case 'b': case 'B': setSemantic('bold'); return;
+                    case 'i': case 'I': setSemantic('italic'); return;
+                }
+            }
+
+            // ── Auswahl-Aktionen (nur wenn Selection aktiv) ────────────────────
+            if (this.drawingManager.currentTool === 'selection') {
+                if (e.key === 'Delete' || e.key === 'Backspace') {
+                    this.strokeSelectionManager.deleteSelectedStrokes();
+                    e.preventDefault(); return;
+                }
+                if (mod && (e.key === 'c' || e.key === 'C')) {
+                    this.strokeSelectionManager.copySelectedStrokes();
+                    e.preventDefault(); return;
+                }
+                if (mod && (e.key === 'v' || e.key === 'V')) {
+                    this.strokeSelectionManager.pasteStrokes(this.currentBlockIndex);
+                    e.preventDefault(); return;
+                }
+                if (mod && (e.key === 'a' || e.key === 'A')) {
+                    const block = this.blocks[this.currentBlockIndex];
+                    if (block) {
+                        this.strokeSelectionManager.selectedStrokes.clear();
+                        block.strokeIds.forEach(id =>
+                            this.strokeSelectionManager.selectedStrokes.add(id));
+                        this.blockManager.renderBlocks();
+                    }
+                    e.preventDefault(); return;
+                }
+            }
         });
 
-        // Resize bleibt als window-Listener
         window.addEventListener('resize', () => {
             if (!this.blocksContainer) return;
             this.blocks.forEach(block => {
@@ -317,11 +334,6 @@ export class InkView extends FileView {
             this.saveDocument(true).catch(e =>
                 console.error('Failed to save on unload:', e)
             );
-        }
-
-        const handleKeyDown = (this as any)._handleKeyDown;
-        if (handleKeyDown) {
-            document.removeEventListener('keydown', handleKeyDown);
         }
 
         const themeObserver = (this as any)._themeObserver;

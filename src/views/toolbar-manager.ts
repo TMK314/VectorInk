@@ -17,51 +17,51 @@ import { InkEmbedRenderer } from './InkEmbedRenderer';
  */
 export class ToolbarManager {
     private context: InkView;
-    public  toolbar: HTMLElement | null = null;
+    public toolbar: HTMLElement | null = null;
 
     // ── Werkzeug-Buttons ────────────────────────────────────────────────────
-    private penBtn:    HTMLElement | null = null;
+    private penBtn: HTMLElement | null = null;
     private eraserBtn: HTMLElement | null = null;
     private selectBtn: HTMLElement | null = null;
 
     // ── Kontextuelle Abschnitte ─────────────────────────────────────────────
-    private penPropsSection:       HTMLElement | null = null;
+    private penPropsSection: HTMLElement | null = null;
     private selectionPropsSection: HTMLElement | null = null;
 
     // ── Stift-Controls ──────────────────────────────────────────────────────
-    private strokeColorInput:   HTMLInputElement | null = null;
+    private strokeColorInput: HTMLInputElement | null = null;
     private strokeOpacityInput: HTMLInputElement | null = null;
-    private strokeWidthInput:   HTMLInputElement | null = null;
+    private strokeWidthInput: HTMLInputElement | null = null;
     private formatBtns: Map<string, HTMLElement> = new Map();
 
     // ── Block-Einstellungen ─────────────────────────────────────────────────
-    public  useColorForStyling   = true;
-    private colorToggle:          HTMLInputElement | null = null;
-    private bgColorInput:         HTMLInputElement | null = null;
-    private decorationSection:    HTMLElement | null = null;
-    private showSeparatorCheck:   HTMLInputElement | null = null;
-    private showQuoteBarCheck:    HTMLInputElement | null = null;
+    public useColorForStyling = true;
+    private colorToggle: HTMLInputElement | null = null;
+    private bgColorInput: HTMLInputElement | null = null;
+    private decorationSection: HTMLElement | null = null;
+    private showSeparatorCheck: HTMLInputElement | null = null;
+    private showQuoteBarCheck: HTMLInputElement | null = null;
 
     // ── Grid ────────────────────────────────────────────────────────────────
-    private gridContainer:       HTMLElement | null = null;
+    private gridContainer: HTMLElement | null = null;
     private gridEnabledCheckbox: HTMLInputElement | null = null;
-    private gridTypeSelect:      HTMLSelectElement | null = null;
-    private gridSizeInput:       HTMLInputElement | null = null;
-    private gridOpacityInput:    HTMLInputElement | null = null;
-    private gridColorInput:      HTMLInputElement | null = null;
-    private gridLineWidthInput:  HTMLInputElement | null = null;
+    private gridTypeSelect: HTMLSelectElement | null = null;
+    private gridSizeInput: HTMLInputElement | null = null;
+    private gridOpacityInput: HTMLInputElement | null = null;
+    private gridColorInput: HTMLInputElement | null = null;
+    private gridLineWidthInput: HTMLInputElement | null = null;
 
     // ── Zoom / Epsilon ──────────────────────────────────────────────────────
     private widthMultiplierInput: HTMLInputElement | null = null;
-    private multiplierValue:      HTMLSpanElement  | null = null;
-    public  epsilonInput:          HTMLInputElement | null = null;
+    private multiplierValue: HTMLSpanElement | null = null;
+    public epsilonInput: HTMLInputElement | null = null;
 
     // ── Undo / Redo ─────────────────────────────────────────────────────────
     private undoBtn: HTMLButtonElement | null = null;
     private redoBtn: HTMLButtonElement | null = null;
 
     // Legacy – werden ggf. von anderen Managern referenziert
-    public marginTopInput:    HTMLInputElement | null = null;
+    public marginTopInput: HTMLInputElement | null = null;
     public marginBottomInput: HTMLInputElement | null = null;
 
     constructor(context: InkView) {
@@ -76,7 +76,7 @@ export class ToolbarManager {
         this.toolbar = document.createElement('div');
         this.toolbar.className = 'ink-toolbar';
 
-        const block      = this.getCurrentBlock();
+        const block = this.getCurrentBlock();
         const activeTool = this.context.drawingManager.currentTool;
 
         // 1 ── Save · Undo · Redo ─────────────────────────────────────────────
@@ -96,15 +96,15 @@ export class ToolbarManager {
         // 2 ── Tools ──────────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
 
-        this.penBtn = this.btn('✏️', 'Pen (Ctrl+P)',
+        this.penBtn = this.btn('✏️', 'Pen (P)',
             () => this.context.drawingManager.setTool('pen'));
         this.toolbar.appendChild(this.penBtn);
 
-        this.eraserBtn = this.btn('🧽', 'Eraser (Ctrl+E)',
+        this.eraserBtn = this.btn('🧽', 'Eraser (E)',
             () => this.context.drawingManager.setTool('eraser'));
         this.toolbar.appendChild(this.eraserBtn);
 
-        this.selectBtn = this.btn('↖️', 'Selection',
+        this.selectBtn = this.btn('↖️', 'Selection (V)',
             () => this.context.drawingManager.setTool('selection'));
         this.toolbar.appendChild(this.selectBtn);
 
@@ -155,17 +155,17 @@ export class ToolbarManager {
     // ════════════════════════════════════════════════════════════════════════
 
     private buildPenProps(block: Block | undefined): HTMLElement {
-        const pen     = this.context.drawingManager.currentPenStyle;
+        const pen = this.context.drawingManager.currentPenStyle;
         const section = this.row();
 
         // Color
         section.appendChild(this.lbl('Color'));
         this.strokeColorInput = document.createElement('input');
-        this.strokeColorInput.type      = 'color';
-        this.strokeColorInput.value     = pen.color;
+        this.strokeColorInput.type = 'color';
+        this.strokeColorInput.value = pen.color;
         this.strokeColorInput.className = 'ink-tb-color';
-        this.strokeColorInput.title     = 'Pen color';
-        this.strokeColorInput.onchange  = (e) => {
+        this.strokeColorInput.title = 'Pen color';
+        this.strokeColorInput.onchange = (e) => {
             const color = (e.target as HTMLInputElement).value;
             if (this.context.strokeSelectionManager.selectedStrokes.size > 0)
                 this.context.strokeSelectionManager.applyStyleToSelectedStrokes({ color });
@@ -204,10 +204,9 @@ export class ToolbarManager {
         const curSemantic = pen.semantic ?? 'normal';
         this.formatBtns.clear();
         for (const [key, text, title, fw, fi] of [
-            ['normal',    'N',  'Normal',      'normal', 'normal'],
-            ['bold',      'B',  'Bold',        'bold',   'normal'],
-            ['italic',    'I',  'Italic',      'normal', 'italic'],
-            ['highlight', '✦', 'Highlight',   'normal', 'normal'],
+            ['normal', 'N', 'Normal (N)', 'normal', 'normal'],
+            ['bold', 'B', 'Bold (B)', 'bold', 'normal'],
+            ['italic', 'I', 'Italic (I)', 'normal', 'italic'],
         ] as const) {
             const fbtn = this.formatBtn(text, key, title, fw, fi, curSemantic === key);
             fbtn.onclick = () => {
@@ -249,13 +248,13 @@ export class ToolbarManager {
         const colorRow = this.row();
 
         colorRow.appendChild(this.lbl('Colors'));
-        this.colorToggle            = document.createElement('input');
-        this.colorToggle.type       = 'checkbox';
-        this.useColorForStyling     = ds?.useColor ?? true;
-        this.colorToggle.checked    = this.useColorForStyling;
-        this.colorToggle.title      = 'Use stroke colors';
+        this.colorToggle = document.createElement('input');
+        this.colorToggle.type = 'checkbox';
+        this.useColorForStyling = ds?.useColor ?? true;
+        this.colorToggle.checked = this.useColorForStyling;
+        this.colorToggle.title = 'Use stroke colors';
         this.colorToggle.style.transform = 'scale(0.9)';
-        this.colorToggle.onchange   = () => {
+        this.colorToggle.onchange = () => {
             this.useColorForStyling = this.colorToggle!.checked;
             const val = this.useColorForStyling;
             this.pushBlockRestyleHistory(b => {
@@ -268,20 +267,20 @@ export class ToolbarManager {
         colorRow.appendChild(this.colorToggle);
 
         colorRow.appendChild(this.lbl('BG'));
-        this.bgColorInput           = document.createElement('input');
-        this.bgColorInput.type      = 'color';
-        this.bgColorInput.value     = ds?.backgroundColor ?? '#ffffff';
-        this.bgColorInput.title     = 'Block background color';
+        this.bgColorInput = document.createElement('input');
+        this.bgColorInput.type = 'color';
+        this.bgColorInput.value = ds?.backgroundColor ?? '#ffffff';
+        this.bgColorInput.title = 'Block background color';
         this.bgColorInput.className = 'ink-tb-color';
-        this.bgColorInput.disabled  = this.useColorForStyling;
-        this.bgColorInput.oninput   = () => {
+        this.bgColorInput.disabled = this.useColorForStyling;
+        this.bgColorInput.oninput = () => {
             const c = this.bgColorInput!.value;
             this.pushBlockRestyleHistory(b => {
                 this.ensureBlockDS(b).backgroundColor = c; return { backgroundColor: c };
             });
             this.context.drawingManager.redrawAllBlocks();
         };
-        this.bgColorInput.onchange  = () => { this.context.saveDocument(true); };
+        this.bgColorInput.onchange = () => { this.context.saveDocument(true); };
         colorRow.appendChild(this.bgColorInput);
         this.toolbar!.appendChild(colorRow);
 
@@ -302,14 +301,16 @@ export class ToolbarManager {
 
         const gs = block?.displaySettings?.grid
             ?? this.context.document?.gridSettings
-            ?? { enabled: false, type: 'grid' as const, size: 20,
-                 color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5 };
+            ?? {
+            enabled: false, type: 'grid' as const, size: 20,
+            color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5
+        };
 
         // Toggle
-        this.gridEnabledCheckbox         = document.createElement('input');
-        this.gridEnabledCheckbox.type    = 'checkbox';
+        this.gridEnabledCheckbox = document.createElement('input');
+        this.gridEnabledCheckbox.type = 'checkbox';
         this.gridEnabledCheckbox.checked = gs.enabled;
-        this.gridEnabledCheckbox.title   = 'Enable grid';
+        this.gridEnabledCheckbox.title = 'Enable grid';
         const glbl = document.createElement('span');
         glbl.textContent = 'Grid'; glbl.style.cssText = 'font-size:12px;cursor:pointer;';
         glbl.onclick = () => {
@@ -432,8 +433,8 @@ export class ToolbarManager {
         sepWrap.dataset.decoration = 'separator';
         sepWrap.style.cssText = `display:${isH ? 'flex' : 'none'};align-items:center;gap:3px;font-size:12px;cursor:pointer;`;
         sepWrap.title = 'Horizontal separator below the heading (preview)';
-        this.showSeparatorCheck         = document.createElement('input');
-        this.showSeparatorCheck.type    = 'checkbox';
+        this.showSeparatorCheck = document.createElement('input');
+        this.showSeparatorCheck.type = 'checkbox';
         this.showSeparatorCheck.checked = block?.displaySettings?.showSeparator ?? isH;
         this.showSeparatorCheck.onchange = () => {
             const b = this.getCurrentBlock(); if (!b) return;
@@ -448,8 +449,8 @@ export class ToolbarManager {
         barWrap.dataset.decoration = 'quotebar';
         barWrap.style.cssText = `display:${isQ ? 'flex' : 'none'};align-items:center;gap:3px;font-size:12px;cursor:pointer;`;
         barWrap.title = 'Left vertical bar + indent for quote blocks (preview)';
-        this.showQuoteBarCheck         = document.createElement('input');
-        this.showQuoteBarCheck.type    = 'checkbox';
+        this.showQuoteBarCheck = document.createElement('input');
+        this.showQuoteBarCheck.type = 'checkbox';
         this.showQuoteBarCheck.checked = block?.displaySettings?.showQuoteBar ?? isQ;
         this.showQuoteBarCheck.onchange = () => {
             const b = this.getCurrentBlock(); if (!b) return;
@@ -467,7 +468,7 @@ export class ToolbarManager {
     // ════════════════════════════════════════════════════════════════════════
 
     private buildZoom(block: Block | undefined): void {
-        const section  = this.row();
+        const section = this.row();
         section.appendChild(this.lbl('Stroke weight'));
 
         const initMult = block?.displaySettings?.widthMultiplier
@@ -526,7 +527,7 @@ export class ToolbarManager {
     // ════════════════════════════════════════════════════════════════════════
 
     private buildEpsilon(): void {
-        const section  = this.row();
+        const section = this.row();
         section.appendChild(this.lbl('Smoothing'));
 
         const initEps = this.context.drawingManager.epsilon;
@@ -558,10 +559,21 @@ export class ToolbarManager {
      * Wird von DrawingManager.setTool() aufgerufen.
      */
     public syncToolbarToTool(tool: 'pen' | 'eraser' | 'selection'): void {
+        // Sektionen ein-/ausblenden (bereits vorhanden)
         if (this.penPropsSection)
-            this.penPropsSection.style.display       = tool === 'pen' || tool === 'selection'       ? 'flex' : 'none';
+            this.penPropsSection.style.display = (tool === 'pen' || tool === 'selection') ? 'flex' : 'none';
         if (this.selectionPropsSection)
-            this.selectionPropsSection.style.display  = tool === 'selection' ? 'flex' : 'none';
+            this.selectionPropsSection.style.display = tool === 'selection' ? 'flex' : 'none';
+
+        // Neu: aktiven Button hervorheben
+        const highlight = (btn: HTMLElement | null, active: boolean) => {
+            if (!btn) return;
+            btn.style.background = active ? 'var(--interactive-accent)' : 'var(--background-primary)';
+            btn.style.color = active ? 'var(--text-on-accent)' : 'var(--text-normal)';
+        };
+        highlight(this.penBtn, tool === 'pen');
+        highlight(this.eraserBtn, tool === 'eraser');
+        highlight(this.selectBtn, tool === 'selection');
     }
 
     /**
@@ -570,21 +582,21 @@ export class ToolbarManager {
      */
     public syncToolbarToCurrentBlock(): void {
         const block = this.getCurrentBlock();
-        const ds    = block?.displaySettings;
+        const ds = block?.displaySettings;
 
         // UseColor + HG-Farbe
         const useColor = ds?.useColor ?? this.useColorForStyling;
         this.useColorForStyling = useColor;
-        if (this.colorToggle)  this.colorToggle.checked  = useColor;
+        if (this.colorToggle) this.colorToggle.checked = useColor;
         if (this.bgColorInput) {
             this.bgColorInput.disabled = useColor;
-            this.bgColorInput.value    = ds?.backgroundColor ?? '#ffffff';
+            this.bgColorInput.value = ds?.backgroundColor ?? '#ffffff';
         }
 
         // Zoom
         const mult = ds?.widthMultiplier ?? this.context.drawingManager?.widthMultiplier ?? 1.0;
         if (this.widthMultiplierInput) this.widthMultiplierInput.value = String(mult);
-        if (this.multiplierValue)      this.multiplierValue.textContent = `${mult.toFixed(1)}×`;
+        if (this.multiplierValue) this.multiplierValue.textContent = `${mult.toFixed(1)}×`;
 
         // Grid
         this.updateGridControls();
@@ -600,27 +612,27 @@ export class ToolbarManager {
             if (bw) bw.style.display = isQ ? 'flex' : 'none';
         }
         if (this.showSeparatorCheck) this.showSeparatorCheck.checked = ds?.showSeparator ?? isH;
-        if (this.showQuoteBarCheck)  this.showQuoteBarCheck.checked  = ds?.showQuoteBar  ?? isQ;
+        if (this.showQuoteBarCheck) this.showQuoteBarCheck.checked = ds?.showQuoteBar ?? isQ;
 
         // Stift-Stil
         const pen = this.context.drawingManager.currentPenStyle;
-        if (this.strokeColorInput)   this.strokeColorInput.value   = pen.color;
+        if (this.strokeColorInput) this.strokeColorInput.value = pen.color;
         if (this.strokeOpacityInput) this.strokeOpacityInput.value = String(Math.round((pen.opacity ?? 1) * 100));
-        if (this.strokeWidthInput)   this.strokeWidthInput.value   = String(pen.width);
+        if (this.strokeWidthInput) this.strokeWidthInput.value = String(pen.width);
         this.setActiveSemantic(pen.semantic ?? 'normal');
     }
 
     public updateGridControls(): void {
         const block = this.getCurrentBlock();
-        const grid  = block?.displaySettings?.grid ?? this.context.document?.gridSettings;
+        const grid = block?.displaySettings?.grid ?? this.context.document?.gridSettings;
         if (!grid) return;
 
         if (this.gridEnabledCheckbox) this.gridEnabledCheckbox.checked = grid.enabled;
-        if (this.gridTypeSelect)      this.gridTypeSelect.value         = grid.type;
-        if (this.gridSizeInput)       this.gridSizeInput.value          = String(grid.size);
-        if (this.gridOpacityInput)    this.gridOpacityInput.value       = String(Math.round((grid.opacity ?? 0.5) * 100));
-        if (this.gridColorInput)      this.gridColorInput.value         = grid.color;
-        if (this.gridLineWidthInput)  this.gridLineWidthInput.value     = String(grid.lineWidth ?? 0.5);
+        if (this.gridTypeSelect) this.gridTypeSelect.value = grid.type;
+        if (this.gridSizeInput) this.gridSizeInput.value = String(grid.size);
+        if (this.gridOpacityInput) this.gridOpacityInput.value = String(Math.round((grid.opacity ?? 0.5) * 100));
+        if (this.gridColorInput) this.gridColorInput.value = grid.color;
+        if (this.gridLineWidthInput) this.gridLineWidthInput.value = String(grid.lineWidth ?? 0.5);
         // Sub-Rows sichtbar?
         if (this.gridContainer) {
             this.gridContainer.querySelectorAll<HTMLElement>('div:not(:first-child)')
@@ -667,10 +679,10 @@ export class ToolbarManager {
     }
 
     private rangeInput(min: number, max: number, step: number, value: number,
-                       width: string, title: string): HTMLInputElement {
+        width: string, title: string): HTMLInputElement {
         const inp = document.createElement('input');
-        inp.type  = 'range';
-        inp.min   = String(min); inp.max = String(max); inp.step = String(step);
+        inp.type = 'range';
+        inp.min = String(min); inp.max = String(max); inp.step = String(step);
         inp.value = String(value);
         inp.style.width = width;
         inp.title = title;
@@ -678,10 +690,10 @@ export class ToolbarManager {
     }
 
     private formatBtn(text: string, key: string, title: string,
-                      fw: string, fi: string, active: boolean): HTMLElement {
+        fw: string, fi: string, active: boolean): HTMLElement {
         const b = document.createElement('button');
-        b.textContent     = text; b.title = title; b.dataset.semantic = key;
-        b.style.cssText   = 'padding:3px 7px;font-size:12px;border:1px solid var(--background-modifier-border);border-radius:4px;cursor:pointer;';
+        b.textContent = text; b.title = title; b.dataset.semantic = key;
+        b.style.cssText = 'padding:3px 7px;font-size:12px;border:1px solid var(--background-modifier-border);border-radius:4px;cursor:pointer;';
         b.style.fontWeight = fw; b.style.fontStyle = fi;
         this.applyFmtStyle(b, active);
         return b;
@@ -689,7 +701,7 @@ export class ToolbarManager {
 
     private applyFmtStyle(btn: HTMLElement, active: boolean): void {
         btn.style.background = active ? 'var(--interactive-accent)' : 'var(--interactive-normal)';
-        btn.style.color      = active ? 'var(--text-on-accent)'     : 'var(--text-muted)';
+        btn.style.color = active ? 'var(--text-on-accent)' : 'var(--text-muted)';
     }
 
     private setActiveSemantic(semantic: string): void {
@@ -715,15 +727,17 @@ export class ToolbarManager {
             const isH = block.type?.startsWith('heading') ?? false;
             const isQ = block.type === 'quote';
             block.displaySettings = {
-                grid: { ...(this.context.document?.gridSettings ?? {
-                    enabled: false, type: 'grid' as const,
-                    size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5,
-                })},
-                useColor:        this.useColorForStyling,
+                grid: {
+                    ...(this.context.document?.gridSettings ?? {
+                        enabled: false, type: 'grid' as const,
+                        size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5,
+                    })
+                },
+                useColor: this.useColorForStyling,
                 widthMultiplier: this.context.drawingManager?.widthMultiplier ?? 1.0,
                 backgroundColor: '#ffffff',
-                showSeparator:   isH,
-                showQuoteBar:    isQ,
+                showSeparator: isH,
+                showQuoteBar: isQ,
             };
         }
         return block.displaySettings;
@@ -745,7 +759,7 @@ export class ToolbarManager {
         // Dateiname und Extension trennen
         const lastDot = base.lastIndexOf('.');
         const withoutExt = lastDot >= 0 ? base.slice(0, lastDot) : base;
-        const ext        = lastDot >= 0 ? base.slice(lastDot)    : '';
+        const ext = lastDot >= 0 ? base.slice(lastDot) : '';
 
         let n = 1;
         let candidate: string;
@@ -766,7 +780,7 @@ export class ToolbarManager {
         try {
             const svg = InkEmbedRenderer.buildCombinedSVG(blocks, inkDoc);
             const svgStr = new XMLSerializer().serializeToString(svg);
-            const basePath  = file.path.replace(/\.ink$/, '.svg');
+            const basePath = file.path.replace(/\.ink$/, '.svg');
             const exportPath = this.resolveExportPath(basePath);
             await this.context.app.vault.create(exportPath, svgStr);
             new Notice(`SVG exported: ${exportPath}`);
@@ -794,7 +808,7 @@ export class ToolbarManager {
             img.onload = async () => {
                 const scale = 2;
                 const canvas = document.createElement('canvas');
-                canvas.width  = w * scale;
+                canvas.width = w * scale;
                 canvas.height = h * scale;
                 const ctx = canvas.getContext('2d')!;
                 ctx.scale(scale, scale);
@@ -804,7 +818,7 @@ export class ToolbarManager {
                 canvas.toBlob(async (pngBlob) => {
                     if (!pngBlob) { new Notice('Ink: PNG export failed'); return; }
                     const buffer = await pngBlob.arrayBuffer();
-                    const basePath   = file.path.replace(/\.ink$/, '.png');
+                    const basePath = file.path.replace(/\.ink$/, '.png');
                     const exportPath = this.resolveExportPath(basePath);
                     try {
                         await this.context.app.vault.createBinary(exportPath, buffer);
@@ -842,5 +856,9 @@ export class ToolbarManager {
         }
 
         if (entries.length > 0) this.context.historyManager?.push({ type: 'RESTYLE_BLOCK', entries });
+    }
+
+    public syncSemanticToToolbar(semantic: string): void {
+        this.setActiveSemantic(semantic);
     }
 }
