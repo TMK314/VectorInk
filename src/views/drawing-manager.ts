@@ -41,6 +41,27 @@ export class DrawingManager {
     public _currentErasedStrokes: Array<{ stroke: Stroke; blockStrokeIdIndex: number }> = [];
 
     /**
+     * Setzt allen transienten Zustand zurück — wird bei Datei-Wechsel aufgerufen.
+     * Pen-Style, Tool und widthMultiplier bleiben erhalten (UI-Einstellungen).
+     */
+    public reset(): void {
+        this.isDrawing = false;
+        this.isErasing = false;
+        this.currentStroke = [];
+        this._rafPending = false;
+        this._rafCanvas = null;
+        this._rafBlock = null;
+        this._eraseRafPending = false;
+        this._eraseRafCanvas = null;
+        this._eraseRafBlock = null;
+        this.dragOffset = { x: 0, y: 0 };
+        this._strokeCache.clear();
+        this._spatialIndex = null;
+        this._currentDrawStyle = null;
+        this._currentErasedStrokes = [];
+    }
+
+    /**
      * Effektiver DPR für den Stroke-Cache UND das Haupt-Canvas.
      * Cache und Canvas müssen dieselbe Auflösung haben, damit drawImage 1:1 kopiert
      * und keine bilineare Interpolation (Unschärfe) entsteht.

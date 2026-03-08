@@ -239,6 +239,14 @@ export class InkView extends FileView {
         (this as any)._handleKeyDown = handleKeyDown;
     }
 
+    // Wird von Obsidian aufgerufen bevor die Datei gewechselt wird (auch zwischen Ink-Dateien)
+    async onUnloadFile(file: TFile): Promise<void> {
+        console.log('🔄 Unloading file:', file.path);
+        if (this.document && this.file) {
+            await this.saveDocument(true);
+        }
+    }
+
     // WICHTIG: Diese Methode wird von Obsidian aufgerufen, wenn die Datei gewechselt wird
     async onLoadFile(file: TFile): Promise<void> {
         console.log('🔄 Loading file:', file.path);
@@ -252,13 +260,14 @@ export class InkView extends FileView {
         this.blocks = [];
         this.currentBlockIndex = 0;
         this.historyManager.clear();
+        this.drawingManager.reset();   // Cache + transienten Zustand leeren
         this.blocksContainer = null;
 
         // Neues Dokument laden
-        await this.loadDocument(); // WICHTIG: Erst Dokument laden
+        await this.loadDocument();
 
         // UI neu aufbauen
-        await this.setupUI(); // Dann UI aufbauen
+        await this.setupUI();
 
         // Scroll positionieren
         if (this.blocksContainer) {
@@ -293,7 +302,7 @@ export class InkView extends FileView {
     async saveDocument(silent = false): Promise<void> {
         if (!this.document || !this.file) {
             console.error('❌ No document or file to save');
-            new Notice('No document to save');
+            if (!silent) new Notice('No document to save');
             return;
         }
 
@@ -322,7 +331,6 @@ export class InkView extends FileView {
             const preservedIdCounter = this.document.idCounter;
             this.document = new InkDocument(docData, preservedIdCounter);
 
-            // 🔥 WICHTIG: jetzt V2 Serialisierung nutzen
             const serialized = this.document.toJSON();
 
             await this.app.vault.modify(this.file, serialized);
@@ -332,7 +340,7 @@ export class InkView extends FileView {
 
         } catch (error) {
             console.error('❌ Failed to save document:', error);
-            new Notice(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            if (!silent) new Notice(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
 
@@ -347,12 +355,18 @@ export class InkView extends FileView {
     }
 
     onunload(): void {
+        // Speichern beim Entladen (z.B. Plugin-Deaktivierung)
+        if (this.document && this.file) {
+            this.saveDocument(true).catch(e =>
+                console.error('Failed to save on unload:', e)
+            );
+        }
+
         const handleKeyDown = (this as any)._handleKeyDown;
         if (handleKeyDown) {
             document.removeEventListener('keydown', handleKeyDown);
         }
 
-        // Cleanup theme observer
         const themeObserver = (this as any)._themeObserver;
         if (themeObserver) {
             themeObserver.disconnect();
