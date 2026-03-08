@@ -17,19 +17,15 @@ export default class VectorInkPlugin extends Plugin {
 
 		this.registerExtensions(['ink'], INK_VIEW_TYPE);
 
-		// Markdown Post-Processor: ![[datei.ink]] eingebettet rendern
-		// Reading Mode
 		this.registerMarkdownPostProcessor((element, context) => {
 			this.processInkEmbeds(element, context.sourcePath);
 		});
 
-		// Live Preview: MutationObserver auf dem gesamten DOM
 		const observer = new MutationObserver((mutations) => {
 			for (const mutation of mutations) {
 				for (const node of Array.from(mutation.addedNodes)) {
 					if (!(node instanceof HTMLElement)) continue;
 
-					// Direkt ein Embed-Element
 					if (
 						node.matches?.('.internal-embed[src$=".ink"]') ||
 						node.matches?.('.cm-embed-block[src$=".ink"]')
@@ -37,7 +33,6 @@ export default class VectorInkPlugin extends Plugin {
 						this.processInkEmbeds(node.parentElement ?? node, this.getSourcePath(node));
 					}
 
-					// Oder ein Container, der Embeds enthält
 					const embeds = node.querySelectorAll<HTMLElement>(
 						'.internal-embed[src$=".ink"]'
 					);
@@ -49,8 +44,6 @@ export default class VectorInkPlugin extends Plugin {
 		});
 
 		observer.observe(document.body, { childList: true, subtree: true });
-
-		// Observer beim Entladen aufräumen
 		this.register(() => observer.disconnect());
 
 		this.addSettingTab(new VectorInkSettingTab(this.app, this));
@@ -70,14 +63,35 @@ export default class VectorInkPlugin extends Plugin {
 
 	async createInkNote() {
 		try {
-			// Create unique filename with milliseconds
 			const now = new Date();
-			const timestamp = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}${now.getMilliseconds().toString().padStart(3, '0')}`;
-			const filename = `Ink Note ${timestamp}.ink`;
+			const dateStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+
+			// Filename: "2024-01-15.ink", then "2024-01-15 1.ink", "2024-01-15 2.ink", ...
+			let filename = `${dateStr}.ink`;
+			if (this.app.vault.getAbstractFileByPath(filename)) {
+				let n = 1;
+				do { filename = `${dateStr} ${n}.ink`; n++; }
+				while (this.app.vault.getAbstractFileByPath(filename));
+			}
 
 			console.log('📝 Creating ink note:', filename);
 
-			// Create empty ink document
+			const initialBlock = {
+				id: crypto.randomUUID(),
+				type: 'paragraph',
+				strokeIds: [],
+				bbox: { x: 20, y: 20, width: 760, height: 200 },
+				order: 0,
+				displaySettings: {
+					grid: { enabled: false, type: 'grid', size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5 },
+					useColor: false,
+					widthMultiplier: 1.0,
+					backgroundColor: '#ffffff',
+					showSeparator: false,
+					showQuoteBar: false,
+				},
+			};
+
 			const docData = {
 				schemaVersion: 1,
 				document: {
@@ -92,15 +106,14 @@ export default class VectorInkPlugin extends Plugin {
 					}
 				},
 				strokes: [],
-				blocks: [],
+				blocks: [initialBlock],
 				settings: {
 					defaultPen: {
 						width: 2,
 						color: '#000000',
 						semantic: 'normal'
 					},
-					pressureSensitivity: true,
-					smoothing: 0.3
+					smoothing: 0.5
 				},
 				metadata: {
 					createdWith: 'VectorInk Plugin v1.0'
@@ -108,11 +121,7 @@ export default class VectorInkPlugin extends Plugin {
 			};
 
 			const content = JSON.stringify(docData, null, 2);
-
-			// Create the file directly
 			const file = await this.app.vault.create(filename, content);
-
-			// Open the file
 			const leaf = this.app.workspace.getLeaf(true);
 			await leaf.openFile(file);
 
@@ -121,8 +130,6 @@ export default class VectorInkPlugin extends Plugin {
 
 		} catch (error) {
 			console.error('❌ Failed to create ink note:', error);
-
-			// Type-safe error handling
 			if (error instanceof Error) {
 				new Notice(`Failed: ${error.message}`);
 			} else {
@@ -137,7 +144,6 @@ export default class VectorInkPlugin extends Plugin {
 			: Array.from(container.querySelectorAll<HTMLElement>('.internal-embed[src$=".ink"]'));
 
 		for (const embedEl of embeds) {
-			// Nicht doppelt verarbeiten
 			if (embedEl.dataset.inkProcessed === 'true') continue;
 			embedEl.dataset.inkProcessed = 'true';
 
@@ -146,18 +152,17 @@ export default class VectorInkPlugin extends Plugin {
 
 			const inkFile = this.app.metadataCache.getFirstLinkpathDest(src, sourcePath);
 			if (!inkFile || !(inkFile instanceof TFile)) {
-				embedEl.createEl('p', { cls: 'ink-embed-error', text: `⚠ Nicht gefunden: ${src}` });
+				embedEl.createEl('p', { cls: 'ink-embed-error', text: `⚠ Not found: ${src}` });
 				continue;
 			}
 
 			const renderer = new InkEmbedRenderer(this, embedEl, inkFile);
-			renderer.load();                    // MarkdownRenderChild lifecycle
-			this.addChild(renderer);            // Plugin verwaltet den Lifecycle
+			renderer.load();
+			this.addChild(renderer);
 		}
 	}
 
 	private getSourcePath(el: HTMLElement): string {
-		// Obsidian schreibt den Notizpfad als data-path auf das .view-content
 		const view = el.closest<HTMLElement>('[data-path]');
 		return view?.dataset.path ?? '';
 	}

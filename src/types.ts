@@ -34,8 +34,6 @@ export interface Block {
     strokeIds: string[];
     bbox: BoundingBox;
     order: number;
-    textContent?: string;
-    textContentChanged?: boolean;
     displaySettings?: BlockDisplaySettings;
 }
 

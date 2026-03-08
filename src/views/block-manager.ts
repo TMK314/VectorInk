@@ -334,17 +334,27 @@ export class BlockManager {
     }
 
     public addNewBlockAtPosition(type: BlockType, position: number): void {
+        const tm = this.context.toolbarManager;
+        const dm = this.context.drawingManager;
+        const docGrid = this.context.document?.gridSettings ?? {
+            enabled: false, type: 'grid' as const,
+            size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5,
+        };
+
         const newBlock: Block = {
             id: crypto.randomUUID(),
             type,
             strokeIds: [],
-            bbox: {
-                x: 20,
-                y: position * 250 + 20,
-                width: 760,
-                height: 200
+            bbox: { x: 20, y: position * 250 + 20, width: 760, height: 200 },
+            order: position,
+            displaySettings: {
+                grid:            { ...docGrid },
+                useColor:        tm?.useColorForStyling ?? false,
+                widthMultiplier: dm?.widthMultiplier ?? 1.0,
+                backgroundColor: '#ffffff',
+                showSeparator:   type.startsWith('heading'),
+                showQuoteBar:    type === 'quote',
             },
-            order: position
         };
 
         this.context.blocks.splice(position, 0, newBlock);
@@ -367,17 +377,27 @@ export class BlockManager {
     }
 
     public addNewBlock(type: BlockType, order: number, select = false): void {
+        const tm = this.context.toolbarManager;
+        const dm = this.context.drawingManager;
+        const docGrid = this.context.document?.gridSettings ?? {
+            enabled: false, type: 'grid' as const,
+            size: 20, color: '#e0e0e0', opacity: 0.5, lineWidth: 0.5,
+        };
+
         const newBlock: Block = {
             id: crypto.randomUUID(),
             type,
             strokeIds: [],
-            bbox: {
-                x: 20,
-                y: order * 250 + 20,
-                width: 760, // Breitere Tabellen
-                height: 200 // Höhere Tabellen
+            bbox: { x: 20, y: order * 250 + 20, width: 760, height: 200 },
+            order,
+            displaySettings: {
+                grid:            { ...docGrid },
+                useColor:        tm?.useColorForStyling ?? true,
+                widthMultiplier: dm?.widthMultiplier ?? 1.0,
+                backgroundColor: '#ffffff',
+                showSeparator:   type.startsWith('heading'),
+                showQuoteBar:    type === 'quote',
             },
-            order
         };
 
         this.context.blocks.push(newBlock);

@@ -4,15 +4,16 @@ import { InkView } from './InkView';
 import { InkEmbedRenderer } from './InkEmbedRenderer';
 
 /**
- * Toolbar-Reihenfolge:
- *   1. Speichern · Undo · Redo
- *   2. Werkzeuge (Stift · Radierer · Auswahl)
- *   3a. Stift-Eigenschaften  (nur wenn Stift aktiv)
- *   3b. Auswahl-Aktionen     (nur wenn Auswahl aktiv)
- *   4. Block-Einstellungen   (UseColor · HG-Farbe · Grid · Dekorationen)
- *   5. Zoom (Strichstärken-Multiplikator)
- *   6. Glättung (Epsilon)
- *   7. Neuer Block
+ * Toolbar order:
+ *   1. Save · Undo · Redo
+ *   2. Tools (Pen · Eraser · Selection)
+ *   3a. Pen properties   (only when pen active)
+ *   3b. Selection actions (only when selection active)
+ *   4. Block settings    (UseColor · BG color · Grid · Decorations)
+ *   5. Stroke weight
+ *   5b. View zoom
+ *   6. Smoothing (Epsilon)
+ *   7. New block
  */
 export class ToolbarManager {
     private context: InkView;
@@ -78,75 +79,75 @@ export class ToolbarManager {
         const block      = this.getCurrentBlock();
         const activeTool = this.context.drawingManager.currentTool;
 
-        // 1 ── Speichern · Undo · Redo ───────────────────────────────────────
-        this.toolbar.appendChild(this.btn('💾', 'Speichern (Ctrl+S)',
+        // 1 ── Save · Undo · Redo ─────────────────────────────────────────────
+        this.toolbar.appendChild(this.btn('💾', 'Save (Ctrl+S)',
             () => this.context.saveDocument()));
 
-        this.undoBtn = this.btn('↩', 'Rückgängig (Ctrl+Z)',
+        this.undoBtn = this.btn('↩', 'Undo (Ctrl+Z)',
             () => this.context.historyManager?.undo()) as HTMLButtonElement;
         this.undoBtn.disabled = true;
         this.toolbar.appendChild(this.undoBtn);
 
-        this.redoBtn = this.btn('↪', 'Wiederholen (Ctrl+Y)',
+        this.redoBtn = this.btn('↪', 'Redo (Ctrl+Y)',
             () => this.context.historyManager?.redo()) as HTMLButtonElement;
         this.redoBtn.disabled = true;
         this.toolbar.appendChild(this.redoBtn);
 
-        // 2 ── Werkzeuge ──────────────────────────────────────────────────────
+        // 2 ── Tools ──────────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
 
-        this.penBtn = this.btn('✏️', 'Stift (Ctrl+P)',
+        this.penBtn = this.btn('✏️', 'Pen (Ctrl+P)',
             () => this.context.drawingManager.setTool('pen'));
         this.toolbar.appendChild(this.penBtn);
 
-        this.eraserBtn = this.btn('🧽', 'Radierer (Ctrl+E)',
+        this.eraserBtn = this.btn('🧽', 'Eraser (Ctrl+E)',
             () => this.context.drawingManager.setTool('eraser'));
         this.toolbar.appendChild(this.eraserBtn);
 
-        this.selectBtn = this.btn('↖️', 'Auswahl',
+        this.selectBtn = this.btn('↖️', 'Selection',
             () => this.context.drawingManager.setTool('selection'));
         this.toolbar.appendChild(this.selectBtn);
 
-        // Initiale Hervorhebung
+        // Initial highlight
         this.highlightToolBtn(activeTool);
 
-        // 3a ── Stift-Eigenschaften ────────────────────────────────────────────
+        // 3a ── Pen properties ─────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.penPropsSection = this.buildPenProps(block);
         this.penPropsSection.style.display = (activeTool === 'pen' || activeTool === 'selection') ? 'flex' : 'none';
         this.toolbar.appendChild(this.penPropsSection);
 
-        // 3b ── Auswahl-Aktionen ──────────────────────────────────────────────
+        // 3b ── Selection actions ──────────────────────────────────────────────
         this.selectionPropsSection = this.buildSelectionProps();
         this.selectionPropsSection.style.display = activeTool === 'selection' ? 'flex' : 'none';
         this.toolbar.appendChild(this.selectionPropsSection);
 
-        // 4 ── Block-Einstellungen ─────────────────────────────────────────────
+        // 4 ── Block settings ──────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.buildBlockSettings(block);
 
-        // 5 ── Strichgewicht ──────────────────────────────────────────────────
+        // 5 ── Stroke weight ───────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.buildZoom(block);
 
-        // 5b ── Ansichts-Zoom ─────────────────────────────────────────────────
+        // 5b ── View zoom ──────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.buildViewZoom();
 
-        // 6 ── Glättung ───────────────────────────────────────────────────────
+        // 6 ── Smoothing ───────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
         this.buildEpsilon();
 
-        // 7 ── Neuer Block ─────────────────────────────────────────────────────
+        // 7 ── New block ───────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
-        this.toolbar.appendChild(this.btn('＋ Block', 'Neuen Block hinzufügen',
+        this.toolbar.appendChild(this.btn('＋ Block', 'Add new block',
             () => this.context.blockManager.addNewBlock('paragraph', this.context.blocks.length)));
 
         // 8 ── Export ──────────────────────────────────────────────────────────
         this.toolbar.appendChild(this.sep());
-        this.toolbar.appendChild(this.btn('↓ SVG', 'Als SVG exportieren',
+        this.toolbar.appendChild(this.btn('↓ SVG', 'Export as SVG',
             () => this.exportSVG()));
-        this.toolbar.appendChild(this.btn('↓ PNG', 'Als PNG exportieren',
+        this.toolbar.appendChild(this.btn('↓ PNG', 'Export as PNG',
             () => this.exportPNG()));
 
         container.appendChild(this.toolbar);
@@ -160,13 +161,13 @@ export class ToolbarManager {
         const pen     = this.context.drawingManager.currentPenStyle;
         const section = this.row();
 
-        // Farbe
-        section.appendChild(this.lbl('Farbe'));
+        // Color
+        section.appendChild(this.lbl('Color'));
         this.strokeColorInput = document.createElement('input');
         this.strokeColorInput.type      = 'color';
         this.strokeColorInput.value     = pen.color;
         this.strokeColorInput.className = 'ink-tb-color';
-        this.strokeColorInput.title     = 'Stiftfarbe';
+        this.strokeColorInput.title     = 'Pen color';
         this.strokeColorInput.onchange  = (e) => {
             const color = (e.target as HTMLInputElement).value;
             if (this.context.strokeSelectionManager.selectedStrokes.size > 0)
@@ -178,10 +179,10 @@ export class ToolbarManager {
         };
         section.appendChild(this.strokeColorInput);
 
-        // Deckkraft
+        // Opacity
         section.appendChild(this.lbl('Opacity'));
         this.strokeOpacityInput = this.rangeInput(0, 100, 1,
-            Math.round((pen.opacity ?? 1) * 100), '60px', 'Deckkraft');
+            Math.round((pen.opacity ?? 1) * 100), '60px', 'Opacity');
         this.strokeOpacityInput.oninput = (e) => {
             const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
             if (this.context.strokeSelectionManager.selectedStrokes.size > 0)
@@ -190,9 +191,9 @@ export class ToolbarManager {
         };
         section.appendChild(this.strokeOpacityInput);
 
-        // Breite
-        section.appendChild(this.lbl('Breite'));
-        this.strokeWidthInput = this.rangeInput(1, 20, 1, pen.width, '60px', 'Strichbreite');
+        // Width
+        section.appendChild(this.lbl('Width'));
+        this.strokeWidthInput = this.rangeInput(1, 20, 1, pen.width, '60px', 'Stroke width');
         this.strokeWidthInput.oninput = (e) => {
             const width = parseInt((e.target as HTMLInputElement).value);
             if (this.context.strokeSelectionManager.selectedStrokes.size > 0)
@@ -201,15 +202,15 @@ export class ToolbarManager {
         };
         section.appendChild(this.strokeWidthInput);
 
-        // Format-Buttons
+        // Format
         section.appendChild(this.lbl('Format'));
         const curSemantic = pen.semantic ?? 'normal';
         this.formatBtns.clear();
         for (const [key, text, title, fw, fi] of [
             ['normal',    'N',  'Normal',      'normal', 'normal'],
-            ['bold',      'B',  'Fett',        'bold',   'normal'],
-            ['italic',    'I',  'Kursiv',      'normal', 'italic'],
-            ['highlight', '✦', 'Markierung',  'normal', 'normal'],
+            ['bold',      'B',  'Bold',        'bold',   'normal'],
+            ['italic',    'I',  'Italic',      'normal', 'italic'],
+            ['highlight', '✦', 'Highlight',   'normal', 'normal'],
         ] as const) {
             const fbtn = this.formatBtn(text, key, title, fw, fi, curSemantic === key);
             fbtn.onclick = () => {
@@ -231,11 +232,11 @@ export class ToolbarManager {
 
     private buildSelectionProps(): HTMLElement {
         const section = this.row();
-        section.appendChild(this.btn('⎘ Kopieren', 'Strokes kopieren (Ctrl+C)',
+        section.appendChild(this.btn('⎘ Copy', 'Copy strokes (Ctrl+C)',
             () => this.context.strokeSelectionManager.copySelectedStrokes()));
-        section.appendChild(this.btn('⎙ Einfügen', 'Strokes einfügen (Ctrl+V)',
+        section.appendChild(this.btn('⎙ Paste', 'Paste strokes (Ctrl+V)',
             () => this.context.strokeSelectionManager.pasteStrokes(this.context.currentBlockIndex)));
-        section.appendChild(this.btn('🗑 Löschen', 'Strokes löschen (Entf)',
+        section.appendChild(this.btn('🗑 Delete', 'Delete strokes (Del)',
             () => this.context.strokeSelectionManager.deleteSelectedStrokes()));
         return section;
     }
@@ -247,15 +248,15 @@ export class ToolbarManager {
     private buildBlockSettings(block: Block | undefined): void {
         const ds = block?.displaySettings;
 
-        // ── UseColor + Hintergrundfarbe ──────────────────────────────────────
+        // ── UseColor + Background color ──────────────────────────────────────
         const colorRow = this.row();
 
-        colorRow.appendChild(this.lbl('Farben'));
+        colorRow.appendChild(this.lbl('Colors'));
         this.colorToggle            = document.createElement('input');
         this.colorToggle.type       = 'checkbox';
         this.useColorForStyling     = ds?.useColor ?? true;
         this.colorToggle.checked    = this.useColorForStyling;
-        this.colorToggle.title      = 'Strichfarben verwenden';
+        this.colorToggle.title      = 'Use stroke colors';
         this.colorToggle.style.transform = 'scale(0.9)';
         this.colorToggle.onchange   = () => {
             this.useColorForStyling = this.colorToggle!.checked;
@@ -269,11 +270,11 @@ export class ToolbarManager {
         };
         colorRow.appendChild(this.colorToggle);
 
-        colorRow.appendChild(this.lbl('HG'));
+        colorRow.appendChild(this.lbl('BG'));
         this.bgColorInput           = document.createElement('input');
         this.bgColorInput.type      = 'color';
         this.bgColorInput.value     = ds?.backgroundColor ?? '#ffffff';
-        this.bgColorInput.title     = 'Hintergrundfarbe des Blocks (nur bei Farben = aus)';
+        this.bgColorInput.title     = 'Block background color';
         this.bgColorInput.className = 'ink-tb-color';
         this.bgColorInput.disabled  = this.useColorForStyling;
         this.bgColorInput.oninput   = () => {
@@ -311,7 +312,7 @@ export class ToolbarManager {
         this.gridEnabledCheckbox         = document.createElement('input');
         this.gridEnabledCheckbox.type    = 'checkbox';
         this.gridEnabledCheckbox.checked = gs.enabled;
-        this.gridEnabledCheckbox.title   = 'Grid aktivieren';
+        this.gridEnabledCheckbox.title   = 'Enable grid';
         const glbl = document.createElement('span');
         glbl.textContent = 'Grid'; glbl.style.cssText = 'font-size:12px;cursor:pointer;';
         glbl.onclick = () => {
@@ -324,8 +325,8 @@ export class ToolbarManager {
         // Sub-Controls
         const subs: HTMLElement[] = [];
 
-        // Typ
-        const tRow = this.gridSubRow('Typ:');
+        // Type
+        const tRow = this.gridSubRow('Type:');
         this.gridTypeSelect = document.createElement('select');
         this.gridTypeSelect.style.cssText = 'font-size:11px;padding:2px;background:var(--background-primary);color:var(--text-normal);border:1px solid var(--background-modifier-border);border-radius:3px;';
         for (const t of ['grid', 'lines', 'dots']) {
@@ -343,8 +344,8 @@ export class ToolbarManager {
         };
         tRow.appendChild(this.gridTypeSelect); subs.push(tRow);
 
-        // Größe
-        const szRow = this.gridSubRow('Größe:');
+        // Size
+        const szRow = this.gridSubRow('Size:');
         this.gridSizeInput = document.createElement('input');
         this.gridSizeInput.type = 'number'; this.gridSizeInput.min = '5'; this.gridSizeInput.max = '100'; this.gridSizeInput.step = '5';
         this.gridSizeInput.value = String(gs.size);
@@ -358,10 +359,10 @@ export class ToolbarManager {
         };
         szRow.appendChild(this.gridSizeInput); subs.push(szRow);
 
-        // Deckkraft
-        const opRow = this.gridSubRow('Deckkraft:');
+        // Opacity
+        const opRow = this.gridSubRow('Opacity:');
         this.gridOpacityInput = this.rangeInput(0, 100, 1,
-            Math.round((gs.opacity ?? 0.5) * 100), '50px', 'Grid-Deckkraft');
+            Math.round((gs.opacity ?? 0.5) * 100), '50px', 'Grid opacity');
         this.gridOpacityInput.onchange = (e) => {
             const opacity = parseInt((e.target as HTMLInputElement).value) / 100;
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.opacity = opacity; });
@@ -371,8 +372,8 @@ export class ToolbarManager {
         };
         opRow.appendChild(this.gridOpacityInput); subs.push(opRow);
 
-        // Farbe
-        const cRow = this.gridSubRow('Farbe:');
+        // Color
+        const cRow = this.gridSubRow('Color:');
         this.gridColorInput = document.createElement('input');
         this.gridColorInput.type = 'color'; this.gridColorInput.value = gs.color;
         this.gridColorInput.className = 'ink-tb-color';
@@ -385,10 +386,10 @@ export class ToolbarManager {
         };
         cRow.appendChild(this.gridColorInput); subs.push(cRow);
 
-        // Linienbreite
-        const lwRow = this.gridSubRow('Breite:');
+        // Line width
+        const lwRow = this.gridSubRow('Line width:');
         this.gridLineWidthInput = this.rangeInput(0.1, 5, 0.1,
-            gs.lineWidth ?? 0.5, '50px', 'Grid-Linienbreite');
+            gs.lineWidth ?? 0.5, '50px', 'Grid line width');
         this.gridLineWidthInput.onchange = (e) => {
             const lineWidth = parseFloat((e.target as HTMLInputElement).value);
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.lineWidth = lineWidth; });
@@ -433,7 +434,7 @@ export class ToolbarManager {
         const sepWrap = document.createElement('label');
         sepWrap.dataset.decoration = 'separator';
         sepWrap.style.cssText = `display:${isH ? 'flex' : 'none'};align-items:center;gap:3px;font-size:12px;cursor:pointer;`;
-        sepWrap.title = 'Horizontale Trennlinie unterhalb der Überschrift (Vorschau)';
+        sepWrap.title = 'Horizontal separator below the heading (preview)';
         this.showSeparatorCheck         = document.createElement('input');
         this.showSeparatorCheck.type    = 'checkbox';
         this.showSeparatorCheck.checked = block?.displaySettings?.showSeparator ?? isH;
@@ -442,14 +443,14 @@ export class ToolbarManager {
             this.ensureBlockDS(b).showSeparator = this.showSeparatorCheck!.checked;
         };
         sepWrap.appendChild(this.showSeparatorCheck);
-        sepWrap.appendChild(document.createTextNode('─ Trennlinie'));
+        sepWrap.appendChild(document.createTextNode('─ Separator'));
         this.decorationSection.appendChild(sepWrap);
 
         // Zitatstrich (Quote)
         const barWrap = document.createElement('label');
         barWrap.dataset.decoration = 'quotebar';
         barWrap.style.cssText = `display:${isQ ? 'flex' : 'none'};align-items:center;gap:3px;font-size:12px;cursor:pointer;`;
-        barWrap.title = 'Linker vertikaler Strich + Einrückung für Zitat-Blöcke (Vorschau)';
+        barWrap.title = 'Left vertical bar + indent for quote blocks (preview)';
         this.showQuoteBarCheck         = document.createElement('input');
         this.showQuoteBarCheck.type    = 'checkbox';
         this.showQuoteBarCheck.checked = block?.displaySettings?.showQuoteBar ?? isQ;
@@ -458,25 +459,25 @@ export class ToolbarManager {
             this.ensureBlockDS(b).showQuoteBar = this.showQuoteBarCheck!.checked;
         };
         barWrap.appendChild(this.showQuoteBarCheck);
-        barWrap.appendChild(document.createTextNode('❝ Zitatstrich'));
+        barWrap.appendChild(document.createTextNode('❝ Quote bar'));
         this.decorationSection.appendChild(barWrap);
 
         this.toolbar!.appendChild(this.decorationSection);
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  Abschnitt 5: Strichgewicht
+    //  Section 5: Stroke weight
     // ════════════════════════════════════════════════════════════════════════
 
     private buildZoom(block: Block | undefined): void {
         const section  = this.row();
-        section.appendChild(this.lbl('Strichgewicht'));
+        section.appendChild(this.lbl('Stroke weight'));
 
         const initMult = block?.displaySettings?.widthMultiplier
             ?? this.context.drawingManager?.widthMultiplier ?? 1.0;
 
         this.widthMultiplierInput = this.rangeInput(0.5, 4.0, 0.1, initMult, '60px',
-            'Strichgewicht: skaliert alle Strichbreiten der ausgewählten Blöcke');
+            'Stroke weight: scales all stroke widths of selected blocks');
         this.multiplierValue = document.createElement('span');
         this.multiplierValue.textContent = `${initMult.toFixed(1)}×`;
         this.multiplierValue.style.cssText = 'font-size:11px;min-width:28px;';
@@ -498,16 +499,16 @@ export class ToolbarManager {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  Abschnitt 5b: Ansichts-Zoom (nur Darstellung, kein Einfluss auf Daten)
+    //  Section 5b: View zoom (display only, no effect on data)
     // ════════════════════════════════════════════════════════════════════════
 
     private buildViewZoom(): void {
         const section = this.row();
-        section.appendChild(this.lbl('Ansicht'));
+        section.appendChild(this.lbl('View'));
 
         const initScale = this.context.viewScale ?? 1.0;
-        const viewZoomInput = this.rangeInput(0.5, 5.0, 0.1, initScale, '80px',
-            'Ansichts-Zoom: vergrößert / verkleinert die Blöcke nur in der Bearbeitungsansicht');
+        const viewZoomInput = this.rangeInput(0.5, 2.0, 0.05, initScale, '60px',
+            'View zoom: enlarges / shrinks blocks in the editor view only');
         const viewZoomVal = document.createElement('span');
         viewZoomVal.textContent = `${Math.round(initScale * 100)}%`;
         viewZoomVal.style.cssText = 'font-size:11px;min-width:32px;';
@@ -524,12 +525,12 @@ export class ToolbarManager {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  Abschnitt 6: Glättung (Epsilon)
+    //  Section 6: Smoothing (Epsilon)
     // ════════════════════════════════════════════════════════════════════════
 
     private buildEpsilon(): void {
         const section  = this.row();
-        section.appendChild(this.lbl('Glättung'));
+        section.appendChild(this.lbl('Smoothing'));
 
         const initEps = this.context.drawingManager.epsilon;
         this.epsilonInput = this.rangeInput(0.0, 5.0, 0.1, initEps, '60px',
@@ -775,7 +776,7 @@ export class ToolbarManager {
     private async exportSVG(): Promise<void> {
         const { blocks, document: inkDoc, file } = this.context;
         if (!inkDoc || !file || blocks.length === 0) {
-            new Notice('Ink: Kein Dokument zum Exportieren');
+            new Notice('Ink: No document to export');
             return;
         }
         try {
@@ -784,17 +785,17 @@ export class ToolbarManager {
             const basePath  = file.path.replace(/\.ink$/, '.svg');
             const exportPath = this.resolveExportPath(basePath);
             await this.context.app.vault.create(exportPath, svgStr);
-            new Notice(`SVG exportiert: ${exportPath}`);
+            new Notice(`SVG exported: ${exportPath}`);
         } catch (e) {
             console.error('SVG export failed', e);
-            new Notice('Ink: SVG-Export fehlgeschlagen');
+            new Notice('Ink: SVG export failed');
         }
     }
 
     private async exportPNG(): Promise<void> {
         const { blocks, document: inkDoc, file } = this.context;
         if (!inkDoc || !file || blocks.length === 0) {
-            new Notice('Ink: Kein Dokument zum Exportieren');
+            new Notice('Ink: No document to export');
             return;
         }
         try {
@@ -817,24 +818,24 @@ export class ToolbarManager {
                 URL.revokeObjectURL(url);
 
                 canvas.toBlob(async (pngBlob) => {
-                    if (!pngBlob) { new Notice('Ink: PNG-Export fehlgeschlagen'); return; }
+                    if (!pngBlob) { new Notice('Ink: PNG export failed'); return; }
                     const buffer = await pngBlob.arrayBuffer();
                     const basePath   = file.path.replace(/\.ink$/, '.png');
                     const exportPath = this.resolveExportPath(basePath);
                     try {
                         await this.context.app.vault.createBinary(exportPath, buffer);
-                        new Notice(`PNG exportiert: ${exportPath}`);
+                        new Notice(`PNG exported: ${exportPath}`);
                     } catch (e) {
                         console.error('PNG save failed', e);
-                        new Notice('Ink: PNG-Export fehlgeschlagen');
+                        new Notice('Ink: PNG export failed');
                     }
                 }, 'image/png');
             };
-            img.onerror = () => { URL.revokeObjectURL(url); new Notice('Ink: PNG-Export fehlgeschlagen'); };
+            img.onerror = () => { URL.revokeObjectURL(url); new Notice('Ink: PNG export failed'); };
             img.src = url;
         } catch (e) {
             console.error('PNG export failed', e);
-            new Notice('Ink: PNG-Export fehlgeschlagen');
+            new Notice('Ink: PNG export failed');
         }
     }
 
