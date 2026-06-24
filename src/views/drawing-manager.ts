@@ -197,7 +197,7 @@ export class DrawingManager {
         };
 
         const updateCursor = (point: Point) => {
-            canvas.style.cursor = getCanvasCursor(point);
+            canvas.setCssStyles({ cursor: getCanvasCursor(point) });
         };
 
         const startDrawing = (point: Point) => {
@@ -452,12 +452,15 @@ export class DrawingManager {
                 // canvas.getBoundingClientRect() neu berechnet.
                 selectionBox = document.createElement('div');
                 selectionBox.className = 'stroke-selection-box';
-                selectionBox.style.position = 'fixed';
-                this.applySelectionBoxTheme(selectionBox);
-                selectionBox.style.pointerEvents = 'none';
-                selectionBox.style.zIndex = '1000';
-                selectionBox.style.width = '0';
-                selectionBox.style.height = '0';
+                selectionBox.setCssStyles({
+                    position: 'fixed',
+                    pointerEvents: 'none',
+                    zIndex: '1000',
+                    width: '0',
+                    height: '0',
+                    border: '2px dashed var(--interactive-accent)',
+                    background: 'color-mix(in srgb, var(--interactive-accent) 20%, transparent)'
+                });
 
                 document.body.appendChild(selectionBox);
             }
@@ -490,10 +493,12 @@ export class DrawingManager {
                     const scaleX = rect.width  / bw;
                     const scaleY = rect.height / bh;
 
-                    selectionBox.style.left   = `${rect.left + snapX * scaleX}px`;
-                    selectionBox.style.top    = `${rect.top  + snapY * scaleY}px`;
-                    selectionBox.style.width  = `${snapW * scaleX}px`;
-                    selectionBox.style.height = `${snapH * scaleY}px`;
+                    selectionBox.setCssStyles({
+                        left: `${rect.left + snapX * scaleX}px`,
+                        top: `${rect.top  + snapY * scaleY}px`,
+                        width: `${snapW * scaleX}px`,
+                        height: `${snapH * scaleY}px`
+                    });
                 });
             }
         };
@@ -554,7 +559,7 @@ export class DrawingManager {
                 }
             });
 
-            canvas.style.cursor = 'move';
+            canvas.setCssStyles({ cursor: 'move' });
         };
 
         const updateDraggingSelection = (point: Point) => {
@@ -724,7 +729,7 @@ export class DrawingManager {
         };
 
         const handlePointerLeave = () => {
-            canvas.style.cursor = this._getCursorForTool();
+            canvas.setCssStyles({ cursor: this._getCursorForTool() });
             if (isMouseDown) handlePointerUp(new PointerEvent('pointerup'));
             if (isSelectingRect && selectionBox) {
                 selectionBox.remove(); selectionBox = null;
@@ -733,12 +738,12 @@ export class DrawingManager {
         };
 
         const handlePointerEnter = () => {
-            canvas.style.cursor = this._getCursorForTool();
+            canvas.setCssStyles({ cursor: this._getCursorForTool() });
         };
 
         // Pointer Events (vereinheitlicht Mouse + Touch + Stylus)
-        canvas.style.touchAction = 'none';
-        canvas.style.cursor = this._getCursorForTool(); // sofort beim Aufbau
+        canvas.setCssStyles({ touchAction: 'none' });
+        canvas.setCssStyles({ cursor: this._getCursorForTool() }); // sofort beim Aufbau
         canvas.addEventListener('pointerdown', handlePointerDown);
         canvas.addEventListener('pointermove', handlePointerMove);
         canvas.addEventListener('pointerup', handlePointerUp);
@@ -1068,13 +1073,15 @@ export class DrawingManager {
             }
         }
 
-        canvas.style.width = `${block.bbox.width}px`;
-        canvas.style.height = `${block.bbox.height}px`;
+        canvas.setCssStyles({
+            width: `${block.bbox.width}px`,
+            height: `${block.bbox.height}px`
+        });
 
         const blockEl = canvas.closest('.ink-block') as HTMLElement;
         if (blockEl) {
             const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
-            blockEl.style.minHeight = `${block.bbox.height + (isSelected ? 120 : 80)}px`;
+            blockEl.setCssStyles({ minHeight: `${block.bbox.height + (isSelected ? 120 : 80)}px` });
         }
     }
 
@@ -1091,14 +1098,16 @@ export class DrawingManager {
             ctx.imageSmoothingQuality = 'high';
         }
 
-        canvas.style.width = `${block.bbox.width}px`;
-        canvas.style.height = `${block.bbox.height}px`;
+        canvas.setCssStyles({
+            width: `${block.bbox.width}px`,
+            height: `${block.bbox.height}px`
+        });
 
         const blockEl = canvas.closest('.ink-block') as HTMLElement;
         if (blockEl) {
             const isSelected = this.context.currentBlockIndex === this.context.blocks.findIndex(b => b.id === block.id);
             const extraHeight = isSelected ? 120 : 80;
-            blockEl.style.minHeight = `${block.bbox.height + extraHeight}px`;
+            blockEl.setCssStyles({ minHeight: `${block.bbox.height + extraHeight}px` });
         }
 
         this.invalidateBlockCache(block.id);
@@ -1157,7 +1166,7 @@ export class DrawingManager {
 
         if (canvas.height !== newHeight || canvas.style.height !== `${newHeight}px`) {
             canvas.height = newHeight;
-            canvas.style.height = `${newHeight}px`;
+            canvas.setCssStyles({ height: `${newHeight}px` });
             block.bbox.height = newHeight;
             this.drawBlockStrokes(canvas, block);
         }
@@ -1574,7 +1583,7 @@ export class DrawingManager {
         const cursor = this._getCursorForTool();
         this.context.blocksContainer
             .querySelectorAll<HTMLCanvasElement>('canvas')
-            .forEach(c => { c.style.cursor = cursor; });
+            .forEach(c => { c.setCssStyles({ cursor }); });
     }
 
     public updateBlock(updates: PartialBlock): void {
@@ -1761,9 +1770,10 @@ export class DrawingManager {
     }
 
     private applySelectionBoxTheme(selectionBox: HTMLElement): void {
-        selectionBox.style.border = '2px dashed var(--interactive-accent)';
-        selectionBox.style.background =
-            'color-mix(in srgb, var(--interactive-accent) 20%, transparent)';
+        selectionBox.setCssStyles({
+            border: '2px dashed var(--interactive-accent)',
+            background: 'color-mix(in srgb, var(--interactive-accent) 20%, transparent)'
+        });
     }
 
 }

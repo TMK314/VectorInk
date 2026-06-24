@@ -253,7 +253,7 @@ export class ToolbarManager {
         this.useColorForStyling = ds?.useColor ?? true;
         this.colorToggle.checked = this.useColorForStyling;
         this.colorToggle.title = 'Use stroke colors';
-        this.colorToggle.style.transform = 'scale(0.9)';
+        this.colorToggle.setCssStyles({ transform: 'scale(0.9)' });
         this.colorToggle.onchange = () => {
             this.useColorForStyling = this.colorToggle!.checked;
             const val = this.useColorForStyling;
@@ -297,7 +297,7 @@ export class ToolbarManager {
 
     private buildGrid(block: Block | undefined): void {
         this.gridContainer = this.row();
-        this.gridContainer.style.flexWrap = 'wrap';
+        this.gridContainer.setCssStyles({ flexWrap: 'wrap' });
 
         const gs = block?.displaySettings?.grid
             ?? this.context.document?.gridSettings
@@ -312,7 +312,8 @@ export class ToolbarManager {
         this.gridEnabledCheckbox.checked = gs.enabled;
         this.gridEnabledCheckbox.title = 'Enable grid';
         const glbl = document.createElement('span');
-        glbl.textContent = 'Grid'; glbl.style.cssText = 'font-size:12px;cursor:pointer;';
+        glbl.textContent = 'Grid';
+        glbl.setCssStyles({ fontSize: '12px', cursor: 'pointer' });
         glbl.onclick = () => {
             this.gridEnabledCheckbox!.checked = !this.gridEnabledCheckbox!.checked;
             this.gridEnabledCheckbox!.dispatchEvent(new Event('change'));
@@ -326,7 +327,14 @@ export class ToolbarManager {
         // Type
         const tRow = this.gridSubRow('Type:');
         this.gridTypeSelect = document.createElement('select');
-        this.gridTypeSelect.style.cssText = 'font-size:11px;padding:2px;background:var(--background-primary);color:var(--text-normal);border:1px solid var(--background-modifier-border);border-radius:3px;';
+        this.gridTypeSelect.setCssStyles({
+            fontSize: '11px',
+            padding: '2px',
+            background: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '3px'
+        });
         for (const t of ['grid', 'lines', 'dots']) {
             const o = document.createElement('option');
             o.value = t; o.textContent = t.charAt(0).toUpperCase() + t.slice(1);
@@ -347,7 +355,13 @@ export class ToolbarManager {
         this.gridSizeInput = document.createElement('input');
         this.gridSizeInput.type = 'number'; this.gridSizeInput.min = '5'; this.gridSizeInput.max = '100'; this.gridSizeInput.step = '5';
         this.gridSizeInput.value = String(gs.size);
-        this.gridSizeInput.style.cssText = 'width:45px;font-size:11px;padding:2px;border:1px solid var(--background-modifier-border);border-radius:3px;';
+        this.gridSizeInput.setCssStyles({
+            width: '45px',
+            fontSize: '11px',
+            padding: '2px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '3px'
+        });
         this.gridSizeInput.onchange = (e) => {
             const size = parseInt((e.target as HTMLInputElement).value);
             this.applyToSelected(b => { this.ensureBlockDS(b).grid.size = size; });
@@ -416,7 +430,8 @@ export class ToolbarManager {
     private gridSubRow(label: string): HTMLElement {
         const r = this.row();
         const l = document.createElement('span');
-        l.textContent = label; l.style.cssText = 'font-size:11px;opacity:0.8;';
+        l.textContent = label;
+        l.setCssStyles({ fontSize: '11px', opacity: '0.8' });
         r.appendChild(l); return r;
     }
 
@@ -431,7 +446,13 @@ export class ToolbarManager {
         // Trennlinie (Heading)
         const sepWrap = document.createElement('label');
         sepWrap.dataset.decoration = 'separator';
-        sepWrap.style.cssText = `display:${isH ? 'flex' : 'none'};align-items:center;gap:3px;font-size:12px;cursor:pointer;`;
+        sepWrap.setCssStyles({
+            display: isH ? 'flex' : 'none',
+            alignItems: 'center',
+            gap: '3px',
+            fontSize: '12px',
+            cursor: 'pointer'
+        });
         sepWrap.title = 'Horizontal separator below the heading (preview)';
         this.showSeparatorCheck = document.createElement('input');
         this.showSeparatorCheck.type = 'checkbox';
@@ -447,7 +468,13 @@ export class ToolbarManager {
         // Zitatstrich (Quote)
         const barWrap = document.createElement('label');
         barWrap.dataset.decoration = 'quotebar';
-        barWrap.style.cssText = `display:${isQ ? 'flex' : 'none'};align-items:center;gap:3px;font-size:12px;cursor:pointer;`;
+        barWrap.setCssStyles({
+            display: isQ ? 'flex' : 'none',
+            alignItems: 'center',
+            gap: '3px',
+            fontSize: '12px',
+            cursor: 'pointer'
+        });
         barWrap.title = 'Left vertical bar + indent for quote blocks (preview)';
         this.showQuoteBarCheck = document.createElement('input');
         this.showQuoteBarCheck.type = 'checkbox';
@@ -478,7 +505,7 @@ export class ToolbarManager {
             'Stroke weight: scales all stroke widths of selected blocks');
         this.multiplierValue = document.createElement('span');
         this.multiplierValue.textContent = `${initMult.toFixed(1)}×`;
-        this.multiplierValue.style.cssText = 'font-size:11px;min-width:28px;';
+        this.multiplierValue.setCssStyles({ fontSize: '11px', minWidth: '28px' });
 
         this.widthMultiplierInput.oninput = () => {
             const value = parseFloat(this.widthMultiplierInput!.value);
@@ -509,7 +536,7 @@ export class ToolbarManager {
             'View zoom: enlarges / shrinks blocks in the editor view only');
         const viewZoomVal = document.createElement('span');
         viewZoomVal.textContent = `${Math.round(initScale * 100)}%`;
-        viewZoomVal.style.cssText = 'font-size:11px;min-width:32px;';
+        viewZoomVal.setCssStyles({ fontSize: '11px', minWidth: '32px' });
 
         viewZoomInput.oninput = () => {
             const v = parseFloat(viewZoomInput.value);
@@ -536,7 +563,7 @@ export class ToolbarManager {
 
         const epsVal = document.createElement('span');
         epsVal.textContent = initEps.toFixed(1);
-        epsVal.style.cssText = 'font-size:11px;min-width:22px;';
+        epsVal.setCssStyles({ fontSize: '11px', minWidth: '22px' });
 
         this.epsilonInput.oninput = (e) => {
             const v = parseFloat((e.target as HTMLInputElement).value);
@@ -568,8 +595,10 @@ export class ToolbarManager {
         // Neu: aktiven Button hervorheben
         const highlight = (btn: HTMLElement | null, active: boolean) => {
             if (!btn) return;
-            btn.style.background = active ? 'var(--interactive-accent)' : 'var(--background-primary)';
-            btn.style.color = active ? 'var(--text-on-accent)' : 'var(--text-normal)';
+            btn.setCssStyles({
+                background: active ? 'var(--interactive-accent)' : 'var(--background-primary)',
+                color: active ? 'var(--text-on-accent)' : 'var(--text-normal)'
+            });
         };
         highlight(this.penBtn, tool === 'pen');
         highlight(this.eraserBtn, tool === 'eraser');
@@ -651,27 +680,53 @@ export class ToolbarManager {
 
     private row(): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = 'display:flex;align-items:center;gap:5px;flex-wrap:wrap;';
+        el.setCssStyles({
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            flexWrap: 'wrap'
+        });
         return el;
     }
 
     private lbl(text: string): HTMLElement {
         const el = document.createElement('span');
         el.textContent = text;
-        el.style.cssText = 'font-size:11px;color:var(--text-muted);user-select:none;white-space:nowrap;';
+        el.setCssStyles({
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            userSelect: 'none',
+            whiteSpace: 'nowrap'
+        });
         return el;
     }
 
     private sep(): HTMLElement {
         const el = document.createElement('div');
-        el.style.cssText = 'width:1px;height:20px;background:var(--background-modifier-border);margin:0 4px;flex-shrink:0;align-self:center;';
+        el.setCssStyles({
+            width: '1px',
+            height: '20px',
+            background: 'var(--background-modifier-border)',
+            margin: '0 4px',
+            flexShrink: '0',
+            alignSelf: 'center'
+        });
         return el;
     }
 
     private btn(icon: string, title: string, onClick: () => void): HTMLElement {
         const b = document.createElement('button');
         b.innerHTML = icon; b.title = title;
-        b.style.cssText = 'padding:4px 8px;font-size:13px;border:1px solid var(--background-modifier-border);border-radius:4px;background:var(--background-primary);color:var(--text-normal);cursor:pointer;white-space:nowrap;';
+        b.setCssStyles({
+            padding: '4px 8px',
+            fontSize: '13px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            background: 'var(--background-primary)',
+            color: 'var(--text-normal)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+        });
         b.onclick = (e) => { e.stopPropagation(); onClick(); };
         b.onmouseenter = () => { if (b.style.background !== 'var(--interactive-accent)') b.style.background = 'var(--background-modifier-hover)'; };
         b.onmouseleave = () => { if (b.style.background !== 'var(--interactive-accent)') b.style.background = 'var(--background-primary)'; };
@@ -684,7 +739,7 @@ export class ToolbarManager {
         inp.type = 'range';
         inp.min = String(min); inp.max = String(max); inp.step = String(step);
         inp.value = String(value);
-        inp.style.width = width;
+        inp.setCssStyles({ width });
         inp.title = title;
         return inp;
     }
@@ -693,15 +748,24 @@ export class ToolbarManager {
         fw: string, fi: string, active: boolean): HTMLElement {
         const b = document.createElement('button');
         b.textContent = text; b.title = title; b.dataset.semantic = key;
-        b.style.cssText = 'padding:3px 7px;font-size:12px;border:1px solid var(--background-modifier-border);border-radius:4px;cursor:pointer;';
-        b.style.fontWeight = fw; b.style.fontStyle = fi;
+        b.setCssStyles({
+            padding: '3px 7px',
+            fontSize: '12px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: fw,
+            fontStyle: fi
+        });
         this.applyFmtStyle(b, active);
         return b;
     }
 
     private applyFmtStyle(btn: HTMLElement, active: boolean): void {
-        btn.style.background = active ? 'var(--interactive-accent)' : 'var(--interactive-normal)';
-        btn.style.color = active ? 'var(--text-on-accent)' : 'var(--text-muted)';
+        btn.setCssStyles({
+            background: active ? 'var(--interactive-accent)' : 'var(--interactive-normal)',
+            color: active ? 'var(--text-on-accent)' : 'var(--text-muted)'
+        });
     }
 
     private setActiveSemantic(semantic: string): void {

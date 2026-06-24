@@ -30,7 +30,7 @@ export class PointerController {
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
     
     // Set CSS for better pointer events
-    svg.style.touchAction = 'none';
+    svg.setCssStyles({ touchAction: 'none' });
   }
   
   private onPointerDown(event: PointerEvent): void {

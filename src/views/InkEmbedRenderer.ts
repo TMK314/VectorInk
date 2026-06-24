@@ -136,9 +136,11 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const svg = document.createElementNS(ns, 'svg') as SVGSVGElement;
         svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-        svg.style.width = '100%';
-        svg.style.display = 'block';
-        svg.style.height = `${block.bbox.height}px`;
+        svg.setCssStyles({
+            width: '100%',
+            display: 'block',
+            height: `${block.bbox.height}px`
+        });
 
         // Hintergrund: CSS-Variable bei useColor=false (passt sich dem Obsidian-Theme an), sonst gespeicherte Block-Farbe
         const useColor = block.displaySettings?.useColor ?? false;
@@ -185,8 +187,10 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const showQuoteBar = block.displaySettings?.showQuoteBar ?? isQuote;
 
         const container = document.createElement('div');
-        container.style.position = 'relative';
-        container.style.marginBottom = '4px';
+        container.setCssStyles({
+            position: 'relative',
+            marginBottom: '4px'
+        });
 
         if (showQuoteBar) {
             container.classList.add('ink-embed-block-quote');
@@ -640,8 +644,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         gridColorInput.type = 'color';
         gridColorInput.value = ds?.grid?.color ?? '#e0e0e0';
         gridColorInput.title = 'Grid color';
-        gridColorInput.style.width = '30px';
-        gridColorInput.style.height = '22px';
+        gridColorInput.setCssStyles({ width: '30px', height: '22px' });
         this.toolbar.appendChild(gridColorInput);
 
         // Grid opacity
@@ -650,7 +653,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         gridOpacityInput.min = '0';
         gridOpacityInput.max = '100';
         gridOpacityInput.value = String((ds?.grid?.opacity ?? 0.5) * 100);
-        gridOpacityInput.style.width = '50px';
+        gridOpacityInput.setCssStyles({ width: '50px' });
         gridOpacityInput.title = 'Grid opacity';
         this.toolbar.appendChild(gridOpacityInput);
 
@@ -661,7 +664,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         gridLineWidthInput.max = '5';
         gridLineWidthInput.step = '0.1';
         gridLineWidthInput.value = String(ds?.grid?.lineWidth ?? 0.5);
-        gridLineWidthInput.style.width = '50px';
+        gridLineWidthInput.setCssStyles({ width: '50px' });
         gridLineWidthInput.title = 'Grid line width';
         this.toolbar.appendChild(gridLineWidthInput);
 
@@ -775,7 +778,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         if (!this.blocksContainer) return;
         const cursor = this._getEmbedToolCursor();
         this.blocksContainer.querySelectorAll<HTMLCanvasElement>('canvas').forEach(c => {
-            c.style.cursor = cursor;
+            c.setCssStyles({ cursor });
         });
     }
 
@@ -831,11 +834,13 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
         canvas.width = w * dpr;
         canvas.height = h * dpr;
-        canvas.style.width = '100%';       // Breite immer 100% des Containers
-        canvas.style.height = `${h}px`;    // Höhe explizit, wächst nach unten
-        canvas.style.display = 'block';
-        canvas.style.touchAction = 'none';
-        canvas.style.cursor = this._getEmbedToolCursor(); // Cursor passend zum aktuellen Werkzeug
+        canvas.setCssStyles({
+            width: '100%',
+            height: `${h}px`,
+            display: 'block',
+            touchAction: 'none',
+            cursor: this._getEmbedToolCursor()
+        });
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -1045,7 +1050,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
         // Canvas vergrößern
         canvas.height = block.bbox.height * dpr;
-        canvas.style.height = `${block.bbox.height}px`;
+        canvas.setCssStyles({ height: `${block.bbox.height}px` });
 
         const ctx = canvas.getContext('2d');
         if (ctx) {

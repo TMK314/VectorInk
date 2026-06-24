@@ -37,45 +37,57 @@ export class BlockManager {
         blockEl.className = 'ink-block';
         blockEl.dataset.blockId = block.id;
         blockEl.dataset.blockType = block.type;
-        blockEl.style.position = 'relative';
-        blockEl.style.width = `${block.bbox.width + 24}px`;   // canvas + 2×12px padding
-        blockEl.style.marginTop = '10px';
-        blockEl.style.marginBottom = '10px';
-        blockEl.style.borderRadius = '6px';
-        blockEl.style.background = 'var(--background-primary)';
-        blockEl.style.padding = '12px';
-        blockEl.style.transition = 'all 0.2s ease';
-        blockEl.style.userSelect = 'none';
-        blockEl.style.cursor = 'default';
+        blockEl.setCssStyles({
+            position: 'relative',
+            width: `${block.bbox.width + 24}px`,
+            marginTop: '10px',
+            marginBottom: '10px',
+            borderRadius: '6px',
+            background: 'var(--background-primary)',
+            padding: '12px',
+            transition: 'all 0.2s ease',
+            userSelect: 'none',
+            cursor: 'default'
+        });
 
         // Rahmen: primaer = durchgezogen, Mehrfachauswahl = gestrichelt, Rest = dezent
         if (isPrimary) {
-            blockEl.style.border = '2px solid var(--interactive-accent)';
-            blockEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+            blockEl.setCssStyles({
+                border: '2px solid var(--interactive-accent)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            });
         } else if (isInSelection) {
-            blockEl.style.border = '1.5px dashed var(--interactive-accent)';
-            blockEl.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+            blockEl.setCssStyles({
+                border: '1.5px dashed var(--interactive-accent)',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+            });
         } else {
-            blockEl.style.border = '1px solid var(--background-modifier-border)';
-            blockEl.style.boxShadow = 'none';
+            blockEl.setCssStyles({
+                border: '1px solid var(--background-modifier-border)',
+                boxShadow: 'none'
+            });
         }
 
         if (isSelected) {
             const header = document.createElement('div');
-            header.style.display = 'flex';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
-            header.style.marginBottom = '10px';
-            header.style.paddingBottom = '5px';
-            header.style.borderBottom = '1px solid var(--background-modifier-border)';
-            header.style.minHeight = '32px';
+            header.setCssStyles({
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '10px',
+                paddingBottom: '5px',
+                borderBottom: '1px solid var(--background-modifier-border)',
+                minHeight: '32px'
+            });
 
             const typeSelector = document.createElement('select');
-            typeSelector.style.marginRight = '10px';
-            typeSelector.style.fontSize = '12px';
-            typeSelector.style.padding = '2px 4px';
-            typeSelector.style.width = '130px';
-            typeSelector.style.flexShrink = '0';
+            typeSelector.setCssStyles({
+                marginRight: '10px',
+                fontSize: '12px',
+                padding: '2px 4px',
+                width: '130px',
+                flexShrink: '0'
+            });
 
             const blockTypes: { value: BlockType, label: string, icon: string }[] = [
                 { value: 'paragraph', label: 'Paragraph', icon: '📝' },
@@ -107,9 +119,11 @@ export class BlockManager {
             header.appendChild(typeSelector);
 
             const controls = document.createElement('div');
-            controls.style.display = 'flex';
-            controls.style.gap = '5px';
-            controls.style.flexShrink = '0';
+            controls.setCssStyles({
+                display: 'flex',
+                gap: '5px',
+                flexShrink: '0'
+            });
 
             const upBtn = this.createBlockControlButton('↑', 'Move up', () => this.moveBlockUp(index));
             upBtn.style.display = index === 0 ? 'none' : 'block';
@@ -120,8 +134,10 @@ export class BlockManager {
             controls.appendChild(downBtn);
 
             const separator = document.createElement('span');
-            separator.style.margin = '0 5px';
-            separator.style.color = 'var(--background-modifier-border)';
+            separator.setCssStyles({
+                margin: '0 5px',
+                color: 'var(--background-modifier-border)'
+            });
             separator.textContent = '|';
             controls.appendChild(separator);
 
@@ -129,7 +145,7 @@ export class BlockManager {
             controls.appendChild(clearBtn);
 
             const deleteBtn = this.createBlockControlButton('✕', 'Delete block', () => this.deleteBlock(block.id));
-            deleteBtn.style.color = 'var(--text-error)';
+            deleteBtn.setCssStyles({ color: 'var(--text-error)' });
             deleteBtn.style.display = this.context.blocks.length > 1 ? 'block' : 'none';
             controls.appendChild(deleteBtn);
 
@@ -137,17 +153,21 @@ export class BlockManager {
             blockEl.appendChild(header);
         } else {
             const miniHeader = document.createElement('div');
-            miniHeader.style.display = 'flex';
-            miniHeader.style.justifyContent = 'flex-start';
-            miniHeader.style.marginBottom = '5px';
-            miniHeader.style.opacity = '0.5';
+            miniHeader.setCssStyles({
+                display: 'flex',
+                justifyContent: 'flex-start',
+                marginBottom: '5px',
+                opacity: '0.5'
+            });
 
             const typeLabel = document.createElement('span');
             typeLabel.textContent = this.getBlockTypeIcon(block.type);
-            typeLabel.style.fontSize = '11px';
-            typeLabel.style.padding = '2px 6px';
-            typeLabel.style.background = 'var(--background-modifier-border)';
-            typeLabel.style.borderRadius = '3px';
+            typeLabel.setCssStyles({
+                fontSize: '11px',
+                padding: '2px 6px',
+                background: 'var(--background-modifier-border)',
+                borderRadius: '3px'
+            });
             miniHeader.appendChild(typeLabel);
 
             blockEl.appendChild(miniHeader);
@@ -156,11 +176,13 @@ export class BlockManager {
         const canvas = document.createElement('canvas');
         canvas.width = block.bbox.width;
         canvas.height = block.bbox.height;
-        canvas.style.width = block.bbox.width + 'px';
-        canvas.style.height = block.bbox.height + 'px';
-        canvas.style.border = isSelected ? '1px solid var(--background-modifier-border)' : 'none';
-        canvas.style.borderRadius = '4px';
-        canvas.style.background = 'var(--background-primary)';
+        canvas.setCssStyles({
+            width: block.bbox.width + 'px',
+            height: block.bbox.height + 'px',
+            border: isSelected ? '1px solid var(--background-modifier-border)' : 'none',
+            borderRadius: '4px',
+            background: 'var(--background-primary)'
+        });
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -265,45 +287,55 @@ export class BlockManager {
 
     private createAddBlockButton(position: 'above' | 'below', blockIndex: number): HTMLElement {
         const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.justifyContent = 'center';
-        buttonContainer.style.alignItems = 'center';
-        buttonContainer.style.margin = position === 'above' ? '0 0 10px 0' : '10px 0 0 0';
-        buttonContainer.style.padding = position === 'above' ? '0 0 10px 0' : '10px 0 0 0';
-        buttonContainer.style.position = 'relative';
+        buttonContainer.setCssStyles({
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            margin: position === 'above' ? '0 0 10px 0' : '10px 0 0 0',
+            padding: position === 'above' ? '0 0 10px 0' : '10px 0 0 0',
+            position: 'relative'
+        });
 
         const line = document.createElement('div');
-        line.style.position = 'absolute';
-        line.style.top = position === 'above' ? '100%' : '0';
-        line.style.left = '20%';
-        line.style.right = '20%';
-        line.style.height = '1px';
-        line.style.background = 'var(--background-modifier-border)';
-        line.style.opacity = '0.5';
+        line.setCssStyles({
+            position: 'absolute',
+            top: position === 'above' ? '100%' : '0',
+            left: '20%',
+            right: '20%',
+            height: '1px',
+            background: 'var(--background-modifier-border)',
+            opacity: '0.5'
+        });
         buttonContainer.appendChild(line);
 
         const addButton = document.createElement('button');
         addButton.textContent = position === 'above' ? '＋ Add Block Above' : '＋ Add Block Below';
         addButton.title = position === 'above' ? 'Add new block above this one' : 'Add new block below this one';
-        addButton.style.padding = '4px 12px';
-        addButton.style.fontSize = '11px';
-        addButton.style.border = '1px solid var(--background-modifier-border)';
-        addButton.style.borderRadius = '4px';
-        addButton.style.background = 'var(--interactive-normal)';
-        addButton.style.cursor = 'pointer';
-        addButton.style.color = 'var(--text-muted)';
-        addButton.style.zIndex = '10';
-        addButton.style.position = 'relative';
+        addButton.setCssStyles({
+            padding: '4px 12px',
+            fontSize: '11px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            background: 'var(--interactive-normal)',
+            cursor: 'pointer',
+            color: 'var(--text-muted)',
+            zIndex: '10',
+            position: 'relative'
+        });
 
         addButton.onmouseenter = () => {
-            addButton.style.background = 'var(--interactive-hover)';
-            addButton.style.color = 'var(--text-normal)';
-            line.style.opacity = '1';
+            addButton.setCssStyles({
+                background: 'var(--interactive-hover)',
+                color: 'var(--text-normal)'
+            });
+            line.setCssStyles({ opacity: '1' });
         };
         addButton.onmouseleave = () => {
-            addButton.style.background = 'var(--interactive-normal)';
-            addButton.style.color = 'var(--text-muted)';
-            line.style.opacity = '0.5';
+            addButton.setCssStyles({
+                background: 'var(--interactive-normal)',
+                color: 'var(--text-muted)'
+            });
+            line.setCssStyles({ opacity: '0.5' });
         };
 
         addButton.onclick = (e) => {
@@ -318,14 +350,16 @@ export class BlockManager {
 
     private createBlockControlButton(icon: string, title: string, onClick: () => void): HTMLElement {
         const button = document.createElement('button');
-        button.innerHTML = icon;
+        button.textContent = icon;
         button.title = title;
-        button.style.padding = '2px 6px';
-        button.style.fontSize = '12px';
-        button.style.border = '1px solid var(--background-modifier-border)';
-        button.style.borderRadius = '4px';
-        button.style.background = 'var(--background-primary)';
-        button.style.cursor = 'pointer';
+        button.setCssStyles({
+            padding: '2px 6px',
+            fontSize: '12px',
+            border: '1px solid var(--background-modifier-border)',
+            borderRadius: '4px',
+            background: 'var(--background-primary)',
+            cursor: 'pointer'
+        });
         button.onclick = (e) => {
             e.stopPropagation();
             onClick();
@@ -499,13 +533,15 @@ export class BlockManager {
                         ctx.imageSmoothingQuality = 'high';
                     }
 
-                    canvas.style.width = `${block.bbox.width}px`;
-                    canvas.style.height = `${block.bbox.height}px`;
+                    canvas.setCssStyles({
+                        width: `${block.bbox.width}px`,
+                        height: `${block.bbox.height}px`
+                    });
                 }
 
                 const blockEl = this.context.blocksContainer?.querySelector(`.ink-block[data-block-id="${blockId}"]`) as HTMLElement;
                 if (blockEl) {
-                    blockEl.style.minHeight = `${block.bbox.height + (isSelected ? 100 : 50)}px`;
+                    blockEl.setCssStyles({ minHeight: `${block.bbox.height + (isSelected ? 100 : 50)}px` });
                 }
 
                 this.renderBlocks();
@@ -568,14 +604,20 @@ export class BlockManager {
             const isInSelection = this.selectedBlockIndices.has(index);
 
             if (isPrimary) {
-                blockEl.style.border = '2px solid var(--interactive-accent)';
-                blockEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                blockEl.setCssStyles({
+                    border: '2px solid var(--interactive-accent)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                });
             } else if (isInSelection) {
-                blockEl.style.border = '1.5px dashed var(--interactive-accent)';
-                blockEl.style.boxShadow = '0 1px 4px rgba(0,0,0,0.06)';
+                blockEl.setCssStyles({
+                    border: '1.5px dashed var(--interactive-accent)',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                });
             } else {
-                blockEl.style.border = '1px solid var(--background-modifier-border)';
-                blockEl.style.boxShadow = 'none';
+                blockEl.setCssStyles({
+                    border: '1px solid var(--background-modifier-border)',
+                    boxShadow: 'none'
+                });
             }
         });
     }

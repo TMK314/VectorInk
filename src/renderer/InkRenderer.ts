@@ -4,8 +4,8 @@ import { InkDocument } from '../model/InkDocument';
 
 export class InkRenderer {
     private container: HTMLElement;
-    private svg: SVGElement;
-    private defs: SVGDefsElement;
+    private svg!: SVGElement;
+    private defs!: SVGDefsElement;
     private document: InkDocument;
     private scale: number = 1.0;
     private offset: { x: number, y: number } = { x: 0, y: 0 };
@@ -19,9 +19,11 @@ export class InkRenderer {
     private setupSVG(): void {
         // Create SVG element
         this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        this.svg.style.width = '100%';
-        this.svg.style.height = '100%';
-        this.svg.style.backgroundColor = this.document.pageSettings.backgroundColor;
+        this.svg.setCssStyles({
+            width: '100%',
+            height: '100%',
+            backgroundColor: this.document.pageSettings.backgroundColor
+        });
 
         // Create defs for markers, patterns, etc.
         this.defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');

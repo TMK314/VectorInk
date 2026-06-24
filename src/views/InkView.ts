@@ -77,14 +77,16 @@ export class InkView extends FileView {
     async setupUI(): Promise<void> {
         this.contentEl.empty();
         this.contentEl.classList.add('ink-view-container');
-        this.contentEl.style.backgroundColor = 'var(--background-primary)';
+        this.contentEl.setCssStyles({ backgroundColor: 'var(--background-primary)' });
 
         const main = document.createElement('div');
-        main.style.display = 'flex';
-        main.style.flexDirection = 'column';
-        main.style.height = '100%';
-        main.style.overflow = 'hidden';
-        main.style.backgroundColor = 'var(--background-primary)';
+        main.setCssStyles({
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            overflow: 'hidden',
+            backgroundColor: 'var(--background-primary)'
+        });
         this.contentEl.appendChild(main);
 
         if (this.document) {
@@ -97,23 +99,34 @@ export class InkView extends FileView {
 
         // Äußerer Scroll-Wrapper – nur overflow, kein Flex
         const scrollWrapper = document.createElement('div');
-        scrollWrapper.style.cssText =
-            'flex:1;overflow:auto;background:var(--background-primary);';
+        scrollWrapper.setCssStyles({
+            flex: '1',
+            overflow: 'auto',
+            background: 'var(--background-primary)'
+        });
         main.appendChild(scrollWrapper);
 
         // Mittlerer Centering-Wrapper – min-width:max-content zwingt den scrollbaren
         // Bereich, die volle gezoomte Breite zu kennen → linke Seite bleibt erreichbar.
         // display:flex + justify-content:center zentriert den Inhalt.
         const centeringWrapper = document.createElement('div');
-        centeringWrapper.style.cssText =
-            'min-width:max-content;display:flex;justify-content:center;';
+        centeringWrapper.setCssStyles({
+            minWidth: 'max-content',
+            display: 'flex',
+            justifyContent: 'center'
+        });
         scrollWrapper.appendChild(centeringWrapper);
 
         // Innerer Container – feste Breite, kein margin:auto nötig
         this.blocksContainer = document.createElement('div');
-        this.blocksContainer.style.cssText =
-            'width:880px;flex-shrink:0;padding:24px 20px;' +
-            'display:flex;flex-direction:column;align-items:center;';
+        this.blocksContainer.setCssStyles({
+            width: '880px',
+            flexShrink: '0',
+            padding: '24px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+        });
         this.blocksContainer.style.zoom = String(this.viewScale);
         centeringWrapper.appendChild(this.blocksContainer);
 
