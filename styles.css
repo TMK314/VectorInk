@@ -399,3 +399,15 @@
     color: var(--text-muted);
     user-select: none;
 }
+
+.ink-btn-hover {
+    background: var(--background-modifier-hover);
+}
+
+.ink-btn-normal {
+    background: var(--background-primary);
+}
+
+.ink-btn-active {
+    background: var(--interactive-accent);
+}

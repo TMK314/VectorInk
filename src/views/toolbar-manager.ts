@@ -717,7 +717,7 @@ export class ToolbarManager {
     private btn(icon: string, title: string, onClick: () => void): HTMLElement {
         const b = activeDocument.createElement('button');
         const template = activeDocument.createElement("template");
-        template.innerHTML = icon.trim();
+        template.textContent = icon.trim();
         b.appendChild(template.content.firstElementChild!);
         b.title = title;
 
@@ -730,8 +730,22 @@ export class ToolbarManager {
             color: 'var(--text-normal)'
         });
         b.onclick = (e) => { e.stopPropagation(); onClick(); };
-        b.onmouseenter = () => { if (b.style.background !== 'var(--interactive-accent)') b.style.background = 'var(--background-modifier-hover)'; };
-        b.onmouseleave = () => { if (b.style.background !== 'var(--interactive-accent)') b.style.background = 'var(--background-primary)'; };
+        b.classList.add("ink-btn-normal");
+
+        b.onmouseenter = () => {
+            if (!b.classList.contains("ink-btn-active")) {
+                b.classList.remove("ink-btn-normal");
+                b.classList.add("ink-btn-hover");
+            }
+        };
+
+        b.onmouseleave = () => {
+            if (!b.classList.contains("ink-btn-active")) {
+                b.classList.remove("ink-btn-hover");
+                b.classList.add("ink-btn-normal");
+            }
+        };
+
         return b;
     }
 
