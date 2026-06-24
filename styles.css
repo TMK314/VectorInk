@@ -33,6 +33,7 @@
     padding: 6px 12px;
     font-size: 13px;
     cursor: pointer;
+    white-space: nowrap;
 
     background-color: var(--background-primary);
     color: var(--text-normal);

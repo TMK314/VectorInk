@@ -1,6 +1,6 @@
 import { Block, BlockType, PartialBlock, BoundingBox } from '../types';
 import { InkView } from './InkView';
-import { Notice } from 'obsidian';
+import { Notice, Platform } from 'obsidian';
 
 export class BlockManager {
     private context: InkView;
@@ -212,7 +212,7 @@ export class BlockManager {
         blockEl.onclick = (e) => {
             const target = e.target as HTMLElement;
             if (!target.closest('select, button, input, .grid-line, .table-cell-overlay')) {
-                const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+                const isMac = Platform.isMacOS;
                 const isMultiSelectKey = isMac ? e.metaKey : e.ctrlKey;
                 const isRangeSelectKey = e.shiftKey;
 

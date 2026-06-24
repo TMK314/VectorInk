@@ -73,7 +73,7 @@ export class ToolbarManager {
     // ════════════════════════════════════════════════════════════════════════
 
     public createToolbar(container: HTMLElement): void {
-        this.toolbar = document.createElement('div');
+        this.toolbar = activeDocument.createElement('div');
         this.toolbar.className = 'ink-toolbar';
 
         const block = this.getCurrentBlock();
@@ -160,7 +160,7 @@ export class ToolbarManager {
 
         // Color
         section.appendChild(this.lbl('Color'));
-        this.strokeColorInput = document.createElement('input');
+        this.strokeColorInput =  activeDocument.createElement('input');
         this.strokeColorInput.type = 'color';
         this.strokeColorInput.value = pen.color;
         this.strokeColorInput.className = 'ink-tb-color';
@@ -248,7 +248,7 @@ export class ToolbarManager {
         const colorRow = this.row();
 
         colorRow.appendChild(this.lbl('Colors'));
-        this.colorToggle = document.createElement('input');
+        this.colorToggle = activeDocument.createElement('input');
         this.colorToggle.type = 'checkbox';
         this.useColorForStyling = ds?.useColor ?? true;
         this.colorToggle.checked = this.useColorForStyling;
@@ -267,7 +267,7 @@ export class ToolbarManager {
         colorRow.appendChild(this.colorToggle);
 
         colorRow.appendChild(this.lbl('BG'));
-        this.bgColorInput = document.createElement('input');
+        this.bgColorInput = activeDocument.createElement('input');
         this.bgColorInput.type = 'color';
         this.bgColorInput.value = ds?.backgroundColor ?? '#ffffff';
         this.bgColorInput.title = 'Block background color';
@@ -307,11 +307,11 @@ export class ToolbarManager {
         };
 
         // Toggle
-        this.gridEnabledCheckbox = document.createElement('input');
+        this.gridEnabledCheckbox = activeDocument.createElement('input');
         this.gridEnabledCheckbox.type = 'checkbox';
         this.gridEnabledCheckbox.checked = gs.enabled;
         this.gridEnabledCheckbox.title = 'Enable grid';
-        const glbl = document.createElement('span');
+        const glbl = activeDocument.createElement('span');
         glbl.textContent = 'Grid';
         glbl.setCssStyles({ fontSize: '12px', cursor: 'pointer' });
         glbl.onclick = () => {
@@ -326,7 +326,7 @@ export class ToolbarManager {
 
         // Type
         const tRow = this.gridSubRow('Type:');
-        this.gridTypeSelect = document.createElement('select');
+        this.gridTypeSelect = activeDocument.createElement('select');
         this.gridTypeSelect.setCssStyles({
             fontSize: '11px',
             padding: '2px',
@@ -336,7 +336,7 @@ export class ToolbarManager {
             borderRadius: '3px'
         });
         for (const t of ['grid', 'lines', 'dots']) {
-            const o = document.createElement('option');
+            const o = activeDocument.createElement('option');
             o.value = t; o.textContent = t.charAt(0).toUpperCase() + t.slice(1);
             if (gs.type === t) o.selected = true;
             this.gridTypeSelect.appendChild(o);
@@ -352,7 +352,7 @@ export class ToolbarManager {
 
         // Size
         const szRow = this.gridSubRow('Size:');
-        this.gridSizeInput = document.createElement('input');
+        this.gridSizeInput = activeDocument.createElement('input');
         this.gridSizeInput.type = 'number'; this.gridSizeInput.min = '5'; this.gridSizeInput.max = '100'; this.gridSizeInput.step = '5';
         this.gridSizeInput.value = String(gs.size);
         this.gridSizeInput.setCssStyles({
@@ -386,7 +386,7 @@ export class ToolbarManager {
 
         // Color
         const cRow = this.gridSubRow('Color:');
-        this.gridColorInput = document.createElement('input');
+        this.gridColorInput = activeDocument.createElement('input');
         this.gridColorInput.type = 'color'; this.gridColorInput.value = gs.color;
         this.gridColorInput.className = 'ink-tb-color';
         this.gridColorInput.onchange = (e) => {
@@ -429,7 +429,7 @@ export class ToolbarManager {
 
     private gridSubRow(label: string): HTMLElement {
         const r = this.row();
-        const l = document.createElement('span');
+        const l = activeDocument.createElement('span');
         l.textContent = label;
         l.setCssStyles({ fontSize: '11px', opacity: '0.8' });
         r.appendChild(l); return r;
@@ -444,7 +444,7 @@ export class ToolbarManager {
         this.decorationSection.style.display = (isH || isQ) ? 'flex' : 'none';
 
         // Trennlinie (Heading)
-        const sepWrap = document.createElement('label');
+        const sepWrap = activeDocument.createElement('label');
         sepWrap.dataset.decoration = 'separator';
         sepWrap.setCssStyles({
             display: isH ? 'flex' : 'none',
@@ -454,7 +454,7 @@ export class ToolbarManager {
             cursor: 'pointer'
         });
         sepWrap.title = 'Horizontal separator below the heading (preview)';
-        this.showSeparatorCheck = document.createElement('input');
+        this.showSeparatorCheck = activeDocument.createElement('input');
         this.showSeparatorCheck.type = 'checkbox';
         this.showSeparatorCheck.checked = block?.displaySettings?.showSeparator ?? isH;
         this.showSeparatorCheck.onchange = () => {
@@ -466,7 +466,7 @@ export class ToolbarManager {
         this.decorationSection.appendChild(sepWrap);
 
         // Zitatstrich (Quote)
-        const barWrap = document.createElement('label');
+        const barWrap = activeDocument.createElement('label');
         barWrap.dataset.decoration = 'quotebar';
         barWrap.setCssStyles({
             display: isQ ? 'flex' : 'none',
@@ -476,7 +476,7 @@ export class ToolbarManager {
             cursor: 'pointer'
         });
         barWrap.title = 'Left vertical bar + indent for quote blocks (preview)';
-        this.showQuoteBarCheck = document.createElement('input');
+        this.showQuoteBarCheck = activeDocument.createElement('input');
         this.showQuoteBarCheck.type = 'checkbox';
         this.showQuoteBarCheck.checked = block?.displaySettings?.showQuoteBar ?? isQ;
         this.showQuoteBarCheck.onchange = () => {
@@ -503,7 +503,7 @@ export class ToolbarManager {
 
         this.widthMultiplierInput = this.rangeInput(0.5, 4.0, 0.1, initMult, '60px',
             'Stroke weight: scales all stroke widths of selected blocks');
-        this.multiplierValue = document.createElement('span');
+        this.multiplierValue = activeDocument.createElement('span');
         this.multiplierValue.textContent = `${initMult.toFixed(1)}×`;
         this.multiplierValue.setCssStyles({ fontSize: '11px', minWidth: '28px' });
 
@@ -534,7 +534,7 @@ export class ToolbarManager {
         const initScale = this.context.viewScale ?? 1.0;
         const viewZoomInput = this.rangeInput(0.5, 5.0, 0.1, initScale, '80px',
             'View zoom: enlarges / shrinks blocks in the editor view only');
-        const viewZoomVal = document.createElement('span');
+        const viewZoomVal = activeDocument.createElement('span');
         viewZoomVal.textContent = `${Math.round(initScale * 100)}%`;
         viewZoomVal.setCssStyles({ fontSize: '11px', minWidth: '32px' });
 
@@ -561,7 +561,7 @@ export class ToolbarManager {
         this.epsilonInput = this.rangeInput(0.0, 5.0, 0.1, initEps, '60px',
             `Bezier-Epsilon: ${initEps.toFixed(1)} (niedriger = genauer)`);
 
-        const epsVal = document.createElement('span');
+        const epsVal = activeDocument.createElement('span');
         epsVal.textContent = initEps.toFixed(1);
         epsVal.setCssStyles({ fontSize: '11px', minWidth: '22px' });
 
@@ -679,7 +679,7 @@ export class ToolbarManager {
     // ════════════════════════════════════════════════════════════════════════
 
     private row(): HTMLElement {
-        const el = document.createElement('div');
+        const el = activeDocument.createElement('div');
         el.setCssStyles({
             display: 'flex',
             alignItems: 'center',
@@ -690,7 +690,7 @@ export class ToolbarManager {
     }
 
     private lbl(text: string): HTMLElement {
-        const el = document.createElement('span');
+        const el = activeDocument.createElement('span');
         el.textContent = text;
         el.setCssStyles({
             fontSize: '11px',
@@ -702,7 +702,7 @@ export class ToolbarManager {
     }
 
     private sep(): HTMLElement {
-        const el = document.createElement('div');
+        const el = activeDocument.createElement('div');
         el.setCssStyles({
             width: '1px',
             height: '20px',
@@ -715,17 +715,19 @@ export class ToolbarManager {
     }
 
     private btn(icon: string, title: string, onClick: () => void): HTMLElement {
-        const b = document.createElement('button');
-        b.innerHTML = icon; b.title = title;
+        const b = activeDocument.createElement('button');
+        const template = activeDocument.createElement("template");
+        template.innerHTML = icon.trim();
+        b.appendChild(template.content.firstElementChild!);
+        b.title = title;
+
         b.setCssStyles({
             padding: '4px 8px',
             fontSize: '13px',
             border: '1px solid var(--background-modifier-border)',
             borderRadius: '4px',
             background: 'var(--background-primary)',
-            color: 'var(--text-normal)',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap'
+            color: 'var(--text-normal)'
         });
         b.onclick = (e) => { e.stopPropagation(); onClick(); };
         b.onmouseenter = () => { if (b.style.background !== 'var(--interactive-accent)') b.style.background = 'var(--background-modifier-hover)'; };
@@ -735,7 +737,7 @@ export class ToolbarManager {
 
     private rangeInput(min: number, max: number, step: number, value: number,
         width: string, title: string): HTMLInputElement {
-        const inp = document.createElement('input');
+        const inp = activeDocument.createElement('input');
         inp.type = 'range';
         inp.min = String(min); inp.max = String(max); inp.step = String(step);
         inp.value = String(value);
@@ -746,7 +748,7 @@ export class ToolbarManager {
 
     private formatBtn(text: string, key: string, title: string,
         fw: string, fi: string, active: boolean): HTMLElement {
-        const b = document.createElement('button');
+        const b = activeDocument.createElement('button');
         b.textContent = text; b.title = title; b.dataset.semantic = key;
         b.setCssStyles({
             padding: '3px 7px',
@@ -836,9 +838,9 @@ export class ToolbarManager {
     }
 
     private async exportSVG(): Promise<void> {
-        const { blocks, document: inkDoc, file } = this.context;
+        const { blocks,document: inkDoc, file } = this.context;
         if (!inkDoc || !file || blocks.length === 0) {
-            new Notice('Ink: No document to export');
+            new Notice('Ink: No activeDocument to export');
             return;
         }
         try {
@@ -855,9 +857,9 @@ export class ToolbarManager {
     }
 
     private async exportPNG(): Promise<void> {
-        const { blocks, document: inkDoc, file } = this.context;
+        const { blocks,document: inkDoc, file } = this.context;
         if (!inkDoc || !file || blocks.length === 0) {
-            new Notice('Ink: No document to export');
+            new Notice('Ink: No activeDocument to export');
             return;
         }
         try {
@@ -871,7 +873,7 @@ export class ToolbarManager {
             const img = new Image();
             img.onload = async () => {
                 const scale = 2;
-                const canvas = document.createElement('canvas');
+                const canvas = activeDocument.createElement('canvas');
                 canvas.width = w * scale;
                 canvas.height = h * scale;
                 const ctx = canvas.getContext('2d')!;

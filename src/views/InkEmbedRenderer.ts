@@ -37,29 +37,29 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     }
 
     async onload(): Promise<void> {
-        await this.loadDocument();
+        await this.loadactiveDocument();
         this.renderPreview();
     }
 
     // ─── Dokument laden / speichern ────────────────────────────────────────────
 
-    private async loadDocument(): Promise<void> {
+    private async loadactiveDocument(): Promise<void> {
         try {
             const raw = await this.plugin.app.vault.read(this.file);
             // fromJSON dekodiert base64-Punkte (v2) und handhabt Rueckwaertskompatibilitaet (v1).
-            // new InkDocument(JSON.parse(raw)) wuerde die Punkte NICHT dekodieren.
+            // new InkactiveDocument(JSON.parse(raw)) wuerde die Punkte NICHT dekodieren.
             this.inkDoc = raw?.trim() ? InkDocument.fromJSON(raw) : new InkDocument();
             this.blocks = this.inkDoc
                 ? [...this.inkDoc.blocks].sort((a, b) => a.order - b.order)
                 : [];
         } catch (e) {
-            console.error('InkEmbedRenderer: loadDocument failed', e);
+            console.error('InkEmbedRenderer: loadocument failed', e);
             this.inkDoc = new InkDocument();
             this.blocks = [];
         }
     }
 
-    private async saveDocument(): Promise<void> {
+    private async saveactiveDocument(): Promise<void> {
         if (!this.inkDoc) return;
         try {
             // Block-Reihenfolge und Stroke-Filterung vor dem Serialisieren anwenden
@@ -133,7 +133,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const vbH = (maxY - minY) + pad * 2;
 
         const ns = 'http://www.w3.org/2000/svg';
-        const svg = document.createElementNS(ns, 'svg') as SVGSVGElement;
+        const svg = activeDocument.createElementNS(ns, 'svg') as SVGSVGElement;
         svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
         svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         svg.setCssStyles({
@@ -144,13 +144,13 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
         // Hintergrund: CSS-Variable bei useColor=false (passt sich dem Obsidian-Theme an), sonst gespeicherte Block-Farbe
         const useColor = block.displaySettings?.useColor ?? false;
-        const isDark = document.body.classList.contains('theme-dark');
-        const themeBackground = getComputedStyle(document.body).getPropertyValue('--background-primary').trim()
+        const isDark = activeDocument.body.classList.contains('theme-dark');
+        const themeBackground = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim()
             || (isDark ? '#1a1a1a' : '#ffffff');
         const bgColor = !useColor
             ? themeBackground
             : (block.displaySettings?.backgroundColor ?? '#ffffff');
-        const bg = document.createElementNS(ns, 'rect');
+        const bg = activeDocument.createElementNS(ns, 'rect');
         bg.setAttribute('x', String(vbX)); bg.setAttribute('y', String(vbY));
         bg.setAttribute('width', String(vbW)); bg.setAttribute('height', String(vbH));
         bg.setAttribute('fill', bgColor);
@@ -186,7 +186,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const showSeparator = block.displaySettings?.showSeparator ?? isHeading;
         const showQuoteBar = block.displaySettings?.showQuoteBar ?? isQuote;
 
-        const container = document.createElement('div');
+        const container = activeDocument.createElement('div');
         container.setCssStyles({
             position: 'relative',
             marginBottom: '4px'
@@ -199,7 +199,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         container.appendChild(svg);
 
         if (showSeparator) {
-            const hr = document.createElement('div');
+            const hr = activeDocument.createElement('div');
             hr.classList.add('ink-embed-block-separator');
             container.appendChild(hr);
         }
@@ -231,8 +231,8 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const blockGap = 8;   // vertikaler Abstand zwischen Blöcken
         const exportWidth = 800;
 
-        const isDark = document.body.classList.contains('theme-dark');
-        const cs = getComputedStyle(document.body);
+        const isDark = activeDocument.body.classList.contains('theme-dark');
+        const cs = getComputedStyle(activeDocument.body);
         const themeBg     = cs.getPropertyValue('--background-primary').trim()       || (isDark ? '#1a1a1a' : '#ffffff');
         const accentColor = cs.getPropertyValue('--interactive-accent').trim()        || '#4a90d9';
         const borderColor = cs.getPropertyValue('--background-modifier-border').trim()|| (isDark ? '#444' : '#ccc');
@@ -293,14 +293,14 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const totalSvgH = yOffset + blockPad;
 
         // ── Haupt-SVG ──────────────────────────────────────────────────────────
-        const combined = document.createElementNS(ns, 'svg') as SVGSVGElement;
+        const combined = activeDocument.createElementNS(ns, 'svg') as SVGSVGElement;
         combined.setAttribute('xmlns', ns);
         combined.setAttribute('width',   String(exportWidth));
         combined.setAttribute('height',  String(totalSvgH));
         combined.setAttribute('viewBox', `0 0 ${exportWidth} ${totalSvgH}`);
 
         // Globaler Hintergrund
-        const bg = document.createElementNS(ns, 'rect');
+        const bg = activeDocument.createElementNS(ns, 'rect');
         bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
         bg.setAttribute('width', String(exportWidth)); bg.setAttribute('height', String(totalSvgH));
         bg.setAttribute('fill', themeBg);
@@ -312,7 +312,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             // ── Quote: Hintergrund-Rect + linker Strich ────────────────────────
             if (showQuoteBar) {
                 // halbtransparenter Hintergrund (6 % accent)
-                const qBg = document.createElementNS(ns, 'rect');
+                const qBg = activeDocument.createElementNS(ns, 'rect');
                 qBg.setAttribute('x',      String(blockPad));
                 qBg.setAttribute('y',      String(yBlock));
                 qBg.setAttribute('width',  String(exportWidth - blockPad * 2));
@@ -323,7 +323,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
                 combined.appendChild(qBg);
 
                 // linker Strich
-                const qBar = document.createElementNS(ns, 'rect');
+                const qBar = activeDocument.createElementNS(ns, 'rect');
                 qBar.setAttribute('x',      String(blockPad));
                 qBar.setAttribute('y',      String(yBlock));
                 qBar.setAttribute('width',  String(quoteBarW));
@@ -335,7 +335,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
             // ── Block-SVG eingebettet als <svg> ────────────────────────────────
             if (blockSvg) {
-                const inner = document.createElementNS(ns, 'svg') as SVGSVGElement;
+                const inner = activeDocument.createElementNS(ns, 'svg') as SVGSVGElement;
                 inner.setAttribute('x',      String(xBlock));
                 inner.setAttribute('y',      String(yBlock));
                 inner.setAttribute('width',  String(wBlock));
@@ -350,7 +350,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             // ── Separator-Linie unterhalb des Blocks ───────────────────────────
             if (showSeparator) {
                 const sepY = yBlock + hBlock + sepMarginT;
-                const sep = document.createElementNS(ns, 'rect');
+                const sep = activeDocument.createElementNS(ns, 'rect');
                 sep.setAttribute('x',      String(blockPad));
                 sep.setAttribute('y',      String(sepY));
                 sep.setAttribute('width',  String(exportWidth - blockPad * 2));
@@ -371,21 +371,21 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         grid: GridSettings, useColor: boolean
     ): void {
         // Grid-Farbe: gespeicherte Farbe wenn useColor==true, sonst Theme-Farbe
-        const isDark = document.body.classList.contains('theme-dark');
+        const isDark = activeDocument.body.classList.contains('theme-dark');
         const gridColor = useColor
             ? grid.color
             : (isDark ? '#555555' : '#d0d0d0');
 
-        const defs = document.createElementNS(ns, 'defs');
+        const defs = activeDocument.createElementNS(ns, 'defs');
         const pid = `ink-grid-${Math.random().toString(36).slice(2)}`;
-        const pat = document.createElementNS(ns, 'pattern');
+        const pat = activeDocument.createElementNS(ns, 'pattern');
         pat.setAttribute('id', pid);
         pat.setAttribute('patternUnits', 'userSpaceOnUse');
         pat.setAttribute('width', String(grid.size));
         pat.setAttribute('height', String(grid.size));
 
         if (grid.type === 'dots') {
-            const dot = document.createElementNS(ns, 'circle');
+            const dot = activeDocument.createElementNS(ns, 'circle');
             dot.setAttribute('cx', String(grid.size / 2));
             dot.setAttribute('cy', String(grid.size / 2));
             dot.setAttribute('r', String(grid.lineWidth ?? 0.5));
@@ -394,7 +394,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
             pat.appendChild(dot);
         } else {
             // grid or lines
-            const path = document.createElementNS(ns, 'path');
+            const path = activeDocument.createElementNS(ns, 'path');
             const d = grid.type === 'grid'
                 ? `M ${grid.size} 0 L 0 0 0 ${grid.size}`   // L-Form für grid
                 : `M 0 ${grid.size} L ${grid.size} ${grid.size}`; // nur horizontal für lines
@@ -409,7 +409,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         defs.appendChild(pat);
         svg.appendChild(defs);
 
-        const rect = document.createElementNS(ns, 'rect');
+        const rect = activeDocument.createElementNS(ns, 'rect');
         rect.setAttribute('x', String(x)); rect.setAttribute('y', String(y));
         rect.setAttribute('width', String(w)); rect.setAttribute('height', String(h));
         rect.setAttribute('fill', `url(#${pid})`);
@@ -422,14 +422,14 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     ): void {
         if (stroke.points.length < 2) return;
 
-        const isDark = document.body.classList.contains('theme-dark');
-        const themeColor = getComputedStyle(document.body).getPropertyValue('--text-normal').trim()
+        const isDark = activeDocument.body.classList.contains('theme-dark');
+        const themeColor = getComputedStyle(activeDocument.body).getPropertyValue('--text-normal').trim()
             || (isDark ? '#ffffff' : '#000000');
         const resolveColor = (c: string): string => {
             if (!c) return themeColor;
             if (c.startsWith('var(')) {
                 const v = c.slice(4, -1).trim();
-                return getComputedStyle(document.body).getPropertyValue(v).trim() || themeColor;
+                return getComputedStyle(activeDocument.body).getPropertyValue(v).trim() || themeColor;
             }
             return c;
         };
@@ -444,7 +444,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
 
         // Einfacher, effizienter Pfad ohne Druckvariation
-        const path = document.createElementNS(ns, 'path') as SVGPathElement;
+        const path = activeDocument.createElementNS(ns, 'path') as SVGPathElement;
         let d: string;
         if (stroke.bezierCurves?.length) {
             d = `M ${stroke.bezierCurves[0]!.p0.x} ${stroke.bezierCurves[0]!.p0.y}`;
@@ -486,20 +486,20 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         // Klick außerhalb → speichern & zurück zur Vorschau
         const onOutsideClick = (e: MouseEvent) => {
             if (!this.containerEl.contains(e.target as Node)) {
-                document.removeEventListener('mousedown', onOutsideClick, true);
+                activeDocument.removeEventListener('mousedown', onOutsideClick, true);
                 this.deactivateEdit();
             }
         };
         // Timeout damit der aktuelle Klick nicht sofort feuert
         setTimeout(() => {
-            document.addEventListener('mousedown', onOutsideClick, true);
+            activeDocument.addEventListener('mousedown', onOutsideClick, true);
         }, 50);
     }
 
     private async deactivateEdit(): Promise<void> {
         if (this.mode !== 'edit') return;
         this.mode = 'preview';
-        await this.saveDocument();
+        await this.saveactiveDocument();
         this.renderPreview();
     }
 
@@ -539,7 +539,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(this.createSep());
 
         // ── Stiftfarbe ───────────────────────────────────────────────────────
-        const colorInput = document.createElement('input');
+        const colorInput = activeDocument.createElement('input');
         colorInput.type = 'color';
         colorInput.value = this.currentPenStyle.color;
         colorInput.title = 'Stiftfarbe';
@@ -550,7 +550,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(colorInput);
 
         // ── Strichbreite ─────────────────────────────────────────────────────
-        const widthInput = document.createElement('input');
+        const widthInput = activeDocument.createElement('input');
         widthInput.type = 'range';
         widthInput.min = '1'; widthInput.max = '8'; widthInput.value = String(this.currentPenStyle.width);
         widthInput.title = 'Strichbreite';
@@ -577,12 +577,12 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         useColorBtn.dataset.tool = 'useColor';
 
         // ── Hintergrundfarbe (pro Block) ──────────────────────────────────────
-        const bgColorLabel = document.createElement('span');
+        const bgColorLabel = activeDocument.createElement('span');
         bgColorLabel.textContent = 'BG:';
         bgColorLabel.className = 'ink-embed-label';
         this.toolbar.appendChild(bgColorLabel);
 
-        const bgColorInput = document.createElement('input');
+        const bgColorInput = activeDocument.createElement('input');
         bgColorInput.type = 'color';
         bgColorInput.value = ds?.backgroundColor ?? '#ffffff';
         bgColorInput.title = 'Hintergrundfarbe (nur bei deaktiviertem Use Color)';
@@ -599,12 +599,12 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(this.createSep());
 
         // ── Zoom / widthMultiplier ────────────────────────────────────────────
-        const zoomLabel = document.createElement('span');
+        const zoomLabel = activeDocument.createElement('span');
         zoomLabel.textContent = 'Zoom:';
         zoomLabel.className = 'ink-embed-label';
         this.toolbar.appendChild(zoomLabel);
 
-        const zoomInput = document.createElement('input');
+        const zoomInput = activeDocument.createElement('input');
         zoomInput.type = 'range';
         zoomInput.min = '0.5'; zoomInput.max = '3'; zoomInput.step = '0.1';
         zoomInput.value = String(ds?.widthMultiplier ?? 1.0);
@@ -622,17 +622,17 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(this.createSep());
 
         // ── Grid ──────────────────────────────────────────────────────────────
-        const gridCheck = document.createElement('input');
+        const gridCheck = activeDocument.createElement('input');
         gridCheck.type = 'checkbox';
         gridCheck.checked = ds?.grid?.enabled ?? false;
         gridCheck.title = 'Grid';
         this.toolbar.appendChild(gridCheck);
         this.toolbar.createSpan({ cls: 'ink-embed-label', text: 'Grid' });
 
-        const gridTypeSelect = document.createElement('select');
+        const gridTypeSelect = activeDocument.createElement('select');
         gridTypeSelect.className = 'ink-embed-select';
         ['grid', 'lines', 'dots'].forEach(t => {
-            const o = document.createElement('option');
+            const o = activeDocument.createElement('option');
             o.value = t; o.textContent = t;
             if ((ds?.grid?.type ?? 'grid') === t) o.selected = true;
             gridTypeSelect.appendChild(o);
@@ -640,7 +640,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(gridTypeSelect);
 
         // Grid color
-        const gridColorInput = document.createElement('input');
+        const gridColorInput = activeDocument.createElement('input');
         gridColorInput.type = 'color';
         gridColorInput.value = ds?.grid?.color ?? '#e0e0e0';
         gridColorInput.title = 'Grid color';
@@ -648,7 +648,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(gridColorInput);
 
         // Grid opacity
-        const gridOpacityInput = document.createElement('input');
+        const gridOpacityInput = activeDocument.createElement('input');
         gridOpacityInput.type = 'range';
         gridOpacityInput.min = '0';
         gridOpacityInput.max = '100';
@@ -658,7 +658,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         this.toolbar.appendChild(gridOpacityInput);
 
         // Grid line width
-        const gridLineWidthInput = document.createElement('input');
+        const gridLineWidthInput = activeDocument.createElement('input');
         gridLineWidthInput.type = 'range';
         gridLineWidthInput.min = '0.1';
         gridLineWidthInput.max = '5';
@@ -692,7 +692,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         const isQuote = block?.type === 'quote';
         if (isHeading || isQuote) {
             if (isHeading) {
-                const sepCheck = document.createElement('input');
+                const sepCheck = activeDocument.createElement('input');
                 sepCheck.type = 'checkbox';
                 sepCheck.checked = block?.displaySettings?.showSeparator ?? true;
                 sepCheck.title = 'Trennlinie unter Überschrift (Vorschau)';
@@ -706,7 +706,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
                 });
             }
             if (isQuote) {
-                const barCheck = document.createElement('input');
+                const barCheck = activeDocument.createElement('input');
                 barCheck.type = 'checkbox';
                 barCheck.checked = block?.displaySettings?.showQuoteBar ?? true;
                 barCheck.title = 'Linker Zitatstrich + Einrückung (Vorschau)';
@@ -791,7 +791,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
     }
 
     private createSep(): HTMLElement {
-        const sep = document.createElement('span');
+        const sep = activeDocument.createElement('span');
         sep.className = 'ink-embed-sep';
         sep.textContent = '|';
         return sep;
@@ -827,7 +827,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         blockEl.dataset.blockId = block.id;
         if (isSelected) blockEl.addClass('selected');
 
-        const canvas = document.createElement('canvas');
+        const canvas = activeDocument.createElement('canvas');
         const dpr = window.devicePixelRatio || 1;
         const w = block.bbox.width;
         const h = block.bbox.height;
@@ -979,8 +979,8 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
 
         // Hintergrundfarbe: CSS-Variable bei useColor=true, sonst gespeicherte Block-Farbe
         const useColor = block.displaySettings?.useColor ?? true;
-        const isDark = document.body.classList.contains('theme-dark');
-        const themeBackground = getComputedStyle(document.body).getPropertyValue('--background-primary').trim()
+        const isDark = activeDocument.body.classList.contains('theme-dark');
+        const themeBackground = getComputedStyle(activeDocument.body).getPropertyValue('--background-primary').trim()
             || (isDark ? '#1a1a1a' : '#ffffff');
         const bgColor = useColor
             ? themeBackground
@@ -1043,7 +1043,7 @@ export class InkEmbedRenderer extends MarkdownRenderChild {
         block.bbox.height += amount;
 
         // Alten Inhalt sichern
-        const tempCanvas = document.createElement('canvas');
+        const tempCanvas = activeDocument.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
         tempCanvas.getContext('2d')?.drawImage(canvas, 0, 0);
